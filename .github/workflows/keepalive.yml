@@ -1,0 +1,18 @@
+name: Supabase Free-Tier Keep-Alive
+
+on:
+  schedule:
+    # Runs at 06:00 UTC every 3 days so the Supabase free-tier project never pauses after 7 idle days.
+    - cron: '0 6 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST endpoint
+        run: |
+          curl -fsSL \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/fx_rates?select=rate_date&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"

@@ -1,0 +1,22 @@
+# Build outputs
+build/
+app/build/
+.dart_tool/
+app/.dart_tool/
+.pub/
+app/.pub/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+*.jks
+*.keystore
+
+# IDE & OS
+.idea/
+*.iml
+.DS_Store
+*.log
