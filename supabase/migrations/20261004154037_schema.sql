@@ -1,0 +1,1 @@
+-- Existing hosted baseline marker; no SQL statements were recorded.

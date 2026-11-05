@@ -7,589 +7,542 @@ import '../../../core/db/tables/tables.dart';
 import '../../../core/domain/balance.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/currency.dart';
-import '../../../core/money/fx_service.dart';
 import '../../../core/money/money.dart';
+import '../../../router.dart';
+import '../../../theme.dart';
+import '../../transactions/presentation/transactions_screen.dart';
 
 class SettleUpScreen extends ConsumerStatefulWidget {
   const SettleUpScreen({super.key});
-
   @override
   ConsumerState<SettleUpScreen> createState() => _SettleUpScreenState();
 }
 
 class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
-  static const _uuid = Uuid();
-
-  Future<void> _showProposeDialog(
-    BuildContext context,
-    AppDatabase db,
-    FxService fx,
-    String meId,
-    String partnerId,
-    SettleUpSummary summary,
-  ) async {
+  Future<void> _recordDialog(SettleUpSummary summary,
+      {Settlement? existing}) async {
+    final db = ref.read(appDatabaseProvider);
+    final me = ref.read(currentUserIdProvider);
+    final partner = ref.read(partnerUserIdProvider);
+    final fx = ref.read(fxServiceProvider);
     final l10n = AppLocalizations.of(context);
-    final myPersonalAccounts = db.accounts
-        .where(
-          (a) =>
-              a.ownership == AccountOwnership.personal && a.ownerId == meId,
-        )
+    final accounts = db.accounts
+        .where((a) =>
+            a.deletedAt == null &&
+            !a.archived &&
+            !a.isCommon &&
+            a.ownerId == me)
         .toList();
-
-    var iAmPayer = !summary.partnerOwesMe;
-    var currency = CurrencyCode.huf;
-    String? selectedAccountId;
-    final defaultMajor = summary.absoluteOwedMinor > 0
-        ? (summary.absoluteOwedMinor ~/ 100).toString()
-        : '';
-    final amountCtrl = TextEditingController(text: defaultMajor);
-    final noteCtrl = TextEditingController();
-
-    final meName = db.findProfile(meId)?.displayName ?? 'Me';
-    final partnerName = db.findProfile(partnerId)?.displayName ?? 'Partner';
+    final amountFocus = FocusNode();
+    final amount = TextEditingController(
+        text: existing != null
+            ? Money(existing.amountMinor, existing.currency)
+                .majorAmount
+                .toStringAsFixed(2)
+            : summary.someoneOwes
+                ? Money(summary.absoluteOwedMinor)
+                    .majorAmount
+                    .toStringAsFixed(2)
+                : '');
+    final note = TextEditingController(text: existing?.note ?? '');
+    var currency = existing?.currency ?? CurrencyCode.huf;
+    var payer = existing?.fromUser ?? (summary.partnerOwesMe ? partner : me);
+    var accountId = '';
+    var busy = false;
+    final form = GlobalKey<FormState>();
+    String draft() => '${amount.text}|${note.text}|$currency|$payer|$accountId';
+    final initial = draft();
+    Future<void> close(BuildContext ctx) async {
+      if (await confirmDiscardChanges(ctx, dirty: draft() != initial) &&
+          ctx.mounted) {
+        Navigator.pop(ctx);
+      }
+    }
 
     await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(
-            l10n.t('Propose Settlement', 'Elszámolás kezdeményezése'),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SegmentedButton<bool>(
-                  segments: [
-                    ButtonSegment(
-                      value: true,
-                      label: Text('$meName → $partnerName'),
-                    ),
-                    ButtonSegment(
-                      value: false,
-                      label: Text('$partnerName → $meName'),
-                    ),
-                  ],
-                  selected: {iAmPayer},
-                  onSelectionChanged: (s) =>
-                      setDialogState(() => iAmPayer = s.first),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: amountCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: l10n.t('Amount', 'Összeg'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<CurrencyCode>(
-                        initialValue: currency,
-                        decoration: InputDecoration(
-                          labelText: l10n.t('Currency', 'Pénznem'),
-                        ),
-                        items: CurrencyCode.values
-                            .map(
-                              (c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c.code),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) setDialogState(() => currency = v);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteCtrl,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Note (optional)', 'Megjegyzés'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
-                  initialValue: selectedAccountId,
-                  decoration: InputDecoration(
-                    labelText: l10n.t(
-                      '🔒 Adjust my own account (private)',
-                      '🔒 Saját számla módosítása (privát)',
-                    ),
-                  ),
-                  items: [
-                    DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text(
-                        l10n.t('None (do not adjust)', 'Nincs számlamódosítás'),
-                      ),
-                    ),
-                    ...myPersonalAccounts.map(
-                      (a) => DropdownMenuItem<String?>(
-                        value: a.id,
-                        child: Text('${a.name} (${a.currency.code})'),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) =>
-                      setDialogState(() => selectedAccountId = v),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.t('Cancel', 'Mégse')),
-            ),
-            FilledButton(
-              onPressed: () {
-                final major =
-                    double.tryParse(amountCtrl.text.trim().replaceAll(',', '.')) ??
-                        0;
-                if (major <= 0) return;
-                final money = Money.fromMajor(major, currency);
-                final baseMoney = fx.convert(money, CurrencyCode.huf);
-                final id = _uuid.v4();
-                final hhId = db.household?.id ?? 'hh-default-001';
-                final fromUser = iAmPayer ? meId : partnerId;
-                final toUser = iAmPayer ? partnerId : meId;
-
-                SettlementPosting? ownPosting;
-                if (selectedAccountId != null) {
-                  final acc = db.findAccount(selectedAccountId!);
-                  final acctMinor = acc != null
-                      ? fx.convert(money, acc.currency).amountMinor
-                      : money.amountMinor;
-                  ownPosting = SettlementPosting(
-                    settlementId: id,
-                    userId: meId,
-                    accountId: selectedAccountId!,
-                    amountMinor: iAmPayer ? -acctMinor : acctMinor,
-                  );
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => StatefulBuilder(builder: (ctx, update) {
+              final raw = parsePositiveAmount(amount.text);
+              final account =
+                  accounts.where((a) => a.id == accountId).firstOrNull;
+              final recipient = payer == me ? partner : me;
+              final names =
+                  '${db.findProfile(payer)?.displayName ?? payer} → ${db.findProfile(recipient)?.displayName ?? recipient}';
+              String effect() {
+                if (account == null || raw == null) {
+                  return l10n.t('No account balance will change.',
+                      'Nem változik számlaegyenleg.');
                 }
+                final converted = fx.convert(
+                    Money.fromMajor(raw, currency), account.currency);
+                return '${account.name}: ${payer == me ? '−' : '+'}${converted.format(locale: l10n.locale.languageCode)}\n${l10n.t('Applied locally only after both partners approve.', 'Csak helyben, mindkét fél jóváhagyása után kerül könyvelésre.')}';
+              }
 
-                final settlement = Settlement(
-                  id: id,
-                  householdId: hhId,
-                  fromUser: fromUser,
-                  toUser: toUser,
-                  amountMinor: money.amountMinor,
-                  currency: currency,
-                  baseAmountMinor: baseMoney.amountMinor,
-                  fromConfirmed: meId == fromUser,
-                  toConfirmed: meId == toUser,
-                  note: noteCtrl.text.trim().isEmpty
-                      ? null
-                      : noteCtrl.text.trim(),
-                  createdBy: meId,
-                  updatedAt: DateTime.now(),
-                );
-                db.upsertSettlement(settlement, ownPosting: ownPosting);
-                db.addActivity(
-                  ActivityEvent(
-                    id: _uuid.v4(),
-                    householdId: hhId,
-                    actorId: meId,
-                    eventType: 'settlement_proposed',
-                    summaryEn:
-                        '$meName proposed a settlement of ${money.format(locale: 'en')}',
-                    summaryHu:
-                        '$meName elszámolást javasolt: ${money.format(locale: 'hu')}',
-                    amountMinor: money.amountMinor,
-                    currency: currency,
-                    createdAt: DateTime.now(),
-                  ),
-                );
-                Navigator.of(ctx).pop();
-              },
-              child: Text(l10n.t('Propose', 'Javaslat küldése')),
-            ),
-          ],
-        ),
-      ),
-    );
+              return PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop) close(ctx);
+                  },
+                  child: AlertDialog(
+                      scrollable: true,
+                      title: Text(existing == null
+                          ? l10n.t(
+                              'Propose settlement', 'Elszámolás kezdeményezése')
+                          : l10n.t(
+                              'Approve settlement', 'Elszámolás jóváhagyása')),
+                      content: Form(
+                          key: form,
+                          child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(l10n.t(
+                                    'Local record only. This does not send a bank payment.',
+                                    'Csak helyi rögzítés. Nem indít banki utalást.')),
+                                const SizedBox(height: 12),
+                                if (existing == null)
+                                  DropdownButtonFormField<String>(
+                                      initialValue: payer,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                          labelText: l10n.t(
+                                              'Who paid?', 'Ki fizetett?')),
+                                      items: [me, partner]
+                                          .map((id) => DropdownMenuItem(
+                                              value: id,
+                                              child: Text(
+                                                  db
+                                                          .findProfile(id)
+                                                          ?.displayName ??
+                                                      id,
+                                                  overflow:
+                                                      TextOverflow.ellipsis)))
+                                          .toList(),
+                                      onChanged: (id) {
+                                        if (id != null) {
+                                          update(() => payer = id);
+                                        }
+                                      }),
+                                const SizedBox(height: 12),
+                                Text(names),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                    controller: amount,
+                                    focusNode: amountFocus,
+                                    readOnly: existing != null,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    decoration: InputDecoration(
+                                        labelText: l10n.t('Amount', 'Összeg')),
+                                    onChanged: (_) => update(() {}),
+                                    validator: (v) => parsePositiveAmount(
+                                                v ?? '') ==
+                                            null
+                                        ? l10n.t(
+                                            'Enter a valid positive amount.',
+                                            'Adj meg érvényes pozitív összeget.')
+                                        : null),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<CurrencyCode>(
+                                    isExpanded: true,
+                                    initialValue: currency,
+                                    decoration: InputDecoration(
+                                        labelText:
+                                            l10n.t('Currency', 'Pénznem')),
+                                    items: CurrencyCode.values
+                                        .map((c) => DropdownMenuItem(
+                                            value: c, child: Text(c.code)))
+                                        .toList(),
+                                    onChanged: existing != null
+                                        ? null
+                                        : (c) {
+                                            if (c != null) {
+                                              update(() => currency = c);
+                                            }
+                                          }),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                    isExpanded: true,
+                                    initialValue: accountId,
+                                    decoration: InputDecoration(
+                                        labelText: l10n.t(
+                                            'My account effect (private)',
+                                            'Saját számla módosítása (privát)')),
+                                    items: [
+                                      DropdownMenuItem(
+                                          value: '',
+                                          child: Text(
+                                              l10n.t('No account change',
+                                                  'Nincs számlamódosítás'),
+                                              overflow: TextOverflow.ellipsis)),
+                                      ...accounts.map((a) => DropdownMenuItem(
+                                          value: a.id,
+                                          child: Text(
+                                              '${a.name} (${a.currency.code})',
+                                              overflow: TextOverflow.ellipsis)))
+                                    ],
+                                    onChanged: (id) =>
+                                        update(() => accountId = id ?? '')),
+                                const SizedBox(height: 12),
+                                Text(effect()),
+                                if (account != null &&
+                                    account.currency != currency)
+                                  Text(l10n.t(
+                                      'Account conversion uses the current local estimate shown above.',
+                                      'A számla átváltása a fent látható aktuális helyi becslést használja.')),
+                                if (existing == null)
+                                  TextFormField(
+                                      controller: note,
+                                      decoration: InputDecoration(
+                                          labelText: l10n.t('Note (optional)',
+                                              'Megjegyzés (opcionális)'))),
+                              ])),
+                      actions: [
+                        TextButton(
+                            onPressed: busy ? null : () => close(ctx),
+                            child: Text(l10n.t('Cancel', 'Mégse'))),
+                        FilledButton(
+                            onPressed: busy ||
+                                    db.household == null ||
+                                    me == partner
+                                ? null
+                                : () async {
+                                    if (!form.currentState!.validate()) {
+                                      amountFocus.requestFocus();
+                                      return;
+                                    }
+                                    final major =
+                                        parsePositiveAmount(amount.text)!;
+                                    final money =
+                                        Money.fromMajor(major, currency);
+                                    if (money.amountMinor <= 0) return;
+                                    update(() => busy = true);
+                                    final approved = await showDialog<bool>(
+                                        context: ctx,
+                                        builder: (review) => AlertDialog(
+                                                title: Text(l10n.t(
+                                                    'Review local record',
+                                                    'Helyi rögzítés ellenőrzése')),
+                                                content: Text(
+                                                    '$names\n${money.format(locale: l10n.locale.languageCode)}\n\n${effect()}\n\n${l10n.t('No bank payment is sent.', 'Nem indul banki utalás.')}'),
+                                                actions: [
+                                                  TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              review, false),
+                                                      child: Text(l10n.t(
+                                                          'Keep editing',
+                                                          'Szerkesztés folytatása'))),
+                                                  FilledButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              review, true),
+                                                      child: Text(l10n.t(
+                                                          'Record',
+                                                          'Rögzítés')))
+                                                ]));
+                                    if (!ctx.mounted) return;
+                                    if (approved != true) {
+                                      update(() => busy = false);
+                                      return;
+                                    }
+                                    final id =
+                                        existing?.id ?? const Uuid().v4();
+                                    final now = DateTime.now();
+                                    final record = Settlement(
+                                        id: id,
+                                        householdId: existing?.householdId ??
+                                            db.household!.id,
+                                        fromUser: payer,
+                                        toUser: recipient,
+                                        amountMinor: money.amountMinor,
+                                        currency: currency,
+                                        baseAmountMinor:
+                                            existing?.baseAmountMinor ??
+                                                fx
+                                                    .convert(
+                                                        money, CurrencyCode.huf)
+                                                    .amountMinor,
+                                        fromConfirmed:
+                                            (existing?.fromConfirmed ??
+                                                    false) ||
+                                                payer == me,
+                                        toConfirmed:
+                                            (existing?.toConfirmed ?? false) ||
+                                                recipient == me,
+                                        note: note.text.trim().isEmpty
+                                            ? null
+                                            : note.text.trim(),
+                                        createdBy: existing?.createdBy ?? me,
+                                        updatedAt: now);
+                                    final posting = account == null
+                                        ? null
+                                        : SettlementPosting(
+                                            settlementId: id,
+                                            userId: me,
+                                            accountId: account.id,
+                                            amountMinor: fx
+                                                    .convert(
+                                                        money, account.currency)
+                                                    .amountMinor *
+                                                (payer == me ? -1 : 1));
+                                    db.upsertSettlement(record,
+                                        ownPosting: posting);
+                                    db.addActivity(ActivityEvent(
+                                        id: const Uuid().v4(),
+                                        householdId: record.householdId,
+                                        actorId: me,
+                                        eventType: record.isConfirmed
+                                            ? 'settlement_confirmed'
+                                            : 'settlement_proposed',
+                                        summaryEn: record.isConfirmed
+                                            ? 'Settlement recorded locally'
+                                            : 'Settlement proposed locally',
+                                        summaryHu: record.isConfirmed
+                                            ? 'Elszámolás helyben rögzítve'
+                                            : 'Helyi elszámolási javaslat',
+                                        createdAt: now));
+                                    Navigator.pop(ctx);
+                                  },
+                            child: Text(existing == null
+                                ? l10n.t(
+                                    'Review proposal', 'Javaslat ellenőrzése')
+                                : l10n.t('Review approval',
+                                    'Jóváhagyás ellenőrzése')))
+                      ]));
+            }));
+    amountFocus.dispose();
+    amount.dispose();
+    note.dispose();
   }
 
-  Future<void> _showConfirmDialog(
-    BuildContext context,
-    AppDatabase db,
-    FxService fx,
-    String meId,
-    Settlement s,
-  ) async {
+  Future<void> _reject(Settlement s) async {
     final l10n = AppLocalizations.of(context);
-    final myPersonalAccounts = db.accounts
-        .where(
-          (a) =>
-              a.ownership == AccountOwnership.personal && a.ownerId == meId,
-        )
-        .toList();
-    String? selectedAccountId;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(
-            l10n.t('Confirm Settlement', 'Elszámolás jóváhagyása'),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.t(
-                  'Both partners must confirm before the running balance updates.',
-                  'Mindkét fél jóváhagyása szükséges az egyenleg frissítéséhez.',
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                initialValue: selectedAccountId,
-                decoration: InputDecoration(
-                  labelText: l10n.t(
-                    '🔒 Adjust my own account (private)',
-                    '🔒 Saját számla módosítása (privát)',
-                  ),
-                ),
-                items: [
-                  DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text(
-                      l10n.t('None (do not adjust)', 'Nincs számlamódosítás'),
-                    ),
-                  ),
-                  ...myPersonalAccounts.map(
-                    (a) => DropdownMenuItem<String?>(
-                      value: a.id,
-                      child: Text('${a.name} (${a.currency.code})'),
-                    ),
-                  ),
-                ],
-                onChanged: (v) =>
-                    setDialogState(() => selectedAccountId = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.t('Cancel', 'Mégse')),
-            ),
-            FilledButton(
-              onPressed: () {
-                SettlementPosting? ownPosting;
-                if (selectedAccountId != null) {
-                  final acc = db.findAccount(selectedAccountId!);
-                  final money = Money(s.amountMinor, s.currency);
-                  final acctMinor = acc != null
-                      ? fx.convert(money, acc.currency).amountMinor
-                      : s.amountMinor;
-                  final isPayer = s.fromUser == meId;
-                  ownPosting = SettlementPosting(
-                    settlementId: s.id,
-                    userId: meId,
-                    accountId: selectedAccountId!,
-                    amountMinor: isPayer ? -acctMinor : acctMinor,
-                  );
-                }
-
-                final confirmed = Settlement(
-                  id: s.id,
-                  householdId: s.householdId,
-                  fromUser: s.fromUser,
-                  toUser: s.toUser,
-                  amountMinor: s.amountMinor,
-                  currency: s.currency,
-                  baseAmountMinor: s.baseAmountMinor,
-                  fromConfirmed: true,
-                  toConfirmed: true,
-                  note: s.note,
-                  createdBy: s.createdBy,
-                  updatedAt: DateTime.now(),
-                );
-                db.upsertSettlement(confirmed, ownPosting: ownPosting);
-                final meName = db.findProfile(meId)?.displayName ?? 'Partner';
-                final money = Money(s.amountMinor, s.currency);
-                db.addActivity(
-                  ActivityEvent(
-                    id: _uuid.v4(),
-                    householdId: s.householdId,
-                    actorId: meId,
-                    eventType: 'settlement_confirmed',
-                    summaryEn:
-                        '$meName confirmed settlement of ${money.format(locale: 'en')}',
-                    summaryHu:
-                        '$meName jóváhagyta az elszámolást: ${money.format(locale: 'hu')}',
-                    amountMinor: s.amountMinor,
-                    currency: s.currency,
-                    createdAt: DateTime.now(),
-                  ),
-                );
-                Navigator.of(ctx).pop();
-              },
-              child: Text(l10n.t('Confirm', 'Jóváhagyás')),
-            ),
-          ],
-        ),
-      ),
-    );
+    final me = ref.read(currentUserIdProvider);
+    final withdraw = s.createdBy == me;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+                title: Text(withdraw
+                    ? l10n.t('Withdraw proposal?', 'Visszavonod a javaslatot?')
+                    : l10n.t('Reject proposal?', 'Elutasítod a javaslatot?')),
+                content: Text(l10n.t(
+                    'The pending record will close without changing account balances or settle-up debt.',
+                    'A függő javaslat lezárul, a számlaegyenlegek és elszámolási tartozás módosítása nélkül.')),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(l10n.t('Cancel', 'Mégse'))),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(withdraw
+                          ? l10n.t('Withdraw', 'Visszavonás')
+                          : l10n.t('Reject', 'Elutasítás')))
+                ]));
+    if (confirmed != true || !mounted) return;
+    ref.read(appDatabaseProvider).upsertSettlement(Settlement(
+        id: s.id,
+        householdId: s.householdId,
+        fromUser: s.fromUser,
+        toUser: s.toUser,
+        amountMinor: s.amountMinor,
+        currency: s.currency,
+        baseAmountMinor: s.baseAmountMinor,
+        fromConfirmed: s.fromConfirmed,
+        toConfirmed: s.toConfirmed,
+        rejectedBy: me,
+        note: s.note,
+        createdBy: s.createdBy,
+        updatedAt: DateTime.now()));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(withdraw
+            ? l10n.t('Proposal withdrawn.', 'Javaslat visszavonva.')
+            : l10n.t('Proposal rejected.', 'Javaslat elutasítva.'))));
   }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(dbTickProvider);
     final db = ref.watch(appDatabaseProvider);
-    final fx = ref.watch(fxServiceProvider);
-    final meId = ref.watch(currentUserIdProvider);
-    final partnerId = ref.watch(partnerUserIdProvider);
-    final hideAmounts = ref.watch(hideAmountsProvider);
+    final me = ref.watch(currentUserIdProvider);
+    final partner = ref.watch(partnerUserIdProvider);
+    final hide = ref.watch(hideAmountsProvider);
+    final locale = ref.watch(appLocaleProvider);
     final l10n = AppLocalizations.of(context);
-    final localeStr = l10n.locale.languageCode;
-
-    final meName = db.findProfile(meId)?.displayName ?? 'Sam';
-    final partnerName = db.findProfile(partnerId)?.displayName ?? 'Anna';
-
     final summary = computeSettleUpBalance(
-      meId: meId,
-      partnerId: partnerId,
-      transactions: db.transactions,
-      settlements: db.settlements,
-    );
-
-    final formattedOwed = Money(
-      summary.absoluteOwedMinor,
-      CurrencyCode.huf,
-    ).format(locale: localeStr, hideAmounts: hideAmounts);
-
-    final headline = !summary.someoneOwes
-        ? l10n.t('All settled up!', 'Minden elszámolva!')
-        : summary.partnerOwesMe
-            ? l10n.t(
-                '$partnerName owes $meName $formattedOwed',
-                '$partnerName tartozik neked ($meName): $formattedOwed',
-              )
-            : l10n.t(
-                '$meName owes $partnerName $formattedOwed',
-                '$meName tartozik neki ($partnerName): $formattedOwed',
-              );
+        meId: me,
+        partnerId: partner,
+        transactions: db.transactions,
+        settlements: db.settlements);
+    final records = db.settlements
+        .where(
+            (s) => s.deletedAt == null && (s.fromUser == me || s.toUser == me))
+        .toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final pending = records.where((s) => s.status == 'pending').toList();
+    final completed = records.where((s) => s.status != 'pending').toList();
+    final meName = db.findProfile(me)?.displayName ?? l10n.viewIndividual;
+    final partnerName =
+        db.findProfile(partner)?.displayName ?? l10n.partnerPersonalAccount;
+    Widget recordCard(Settlement s) {
+      final needsApproval = s.status == 'pending' &&
+          ((s.fromUser == me && !s.fromConfirmed) ||
+              (s.toUser == me && !s.toConfirmed));
+      final waiting = s.fromConfirmed ? s.toUser : s.fromUser;
+      final posting = db.settlementPostings
+          .where((p) => p.settlementId == s.id && p.userId == me)
+          .firstOrNull;
+      final account =
+          posting == null ? null : db.findAccount(posting.accountId);
+      return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DuoCard(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                Text(
+                    '${db.findProfile(s.fromUser)?.displayName ?? s.fromUser} → ${db.findProfile(s.toUser)?.displayName ?? s.toUser}',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(
+                    Money(s.amountMinor, s.currency)
+                        .format(locale: locale, hideAmounts: hide),
+                    style: Theme.of(context).textTheme.titleLarge),
+                Text(s.status == 'pending'
+                    ? needsApproval
+                        ? l10n.t('Needs your approval', 'Jóváhagyásodra vár')
+                        : l10n.t(
+                            'Waiting for ${db.findProfile(waiting)?.displayName ?? waiting}',
+                            '${db.findProfile(waiting)?.displayName ?? waiting} jóváhagyására vár')
+                    : s.isConfirmed
+                        ? l10n.t('Recorded locally · approved by both',
+                            'Helyben rögzítve · mindketten jóváhagyták')
+                        : s.rejectedBy == s.createdBy
+                            ? l10n.t('Withdrawn', 'Visszavonva')
+                            : l10n.t('Rejected', 'Elutasítva')),
+                Text(
+                    '${l10n.t('Proposed by', 'Kezdeményezte')}: ${db.findProfile(s.createdBy)?.displayName ?? s.createdBy}'),
+                Text(
+                    '${l10n.t('Last updated', 'Utoljára módosítva')}: ${MaterialLocalizations.of(context).formatMediumDate(s.updatedAt)}'),
+                if (s.note?.isNotEmpty == true)
+                  Text(s.note!, maxLines: 4, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 8),
+                Text(posting == null || account == null
+                    ? l10n.t('Your accounts: no balance change.',
+                        'Saját számlák: nincs egyenlegmódosítás.')
+                    : '${account.name}: ${Money(posting.amountMinor, account.currency).format(locale: locale, hideAmounts: hide)} · ${s.isConfirmed ? l10n.t('recorded locally', 'helyben könyvelve') : l10n.t('only if both approve', 'csak mindkét jóváhagyás után')}'),
+                if (s.status == 'pending')
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    if (needsApproval)
+                      FilledButton.icon(
+                          onPressed: () => _recordDialog(summary, existing: s),
+                          icon: const Icon(Icons.check),
+                          label: Text(l10n.t('Review and approve',
+                              'Ellenőrzés és jóváhagyás'))),
+                    TextButton(
+                        onPressed: () => _reject(s),
+                        child: Text(s.createdBy == me
+                            ? l10n.t('Withdraw', 'Visszavonás')
+                            : l10n.t('Reject', 'Elutasítás'))),
+                  ]),
+              ])));
+    }
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.settleUp)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        summary.someoneOwes
-                            ? Icons.handshake_outlined
-                            : Icons.verified_outlined,
-                        size: 28,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          headline,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (summary.pendingBaseMinor > 0) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      l10n.t(
-                        'Pending confirmation: ${Money(summary.pendingBaseMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)}',
-                        'Jóváhagyásra vár: ${Money(summary.pendingBaseMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)}',
-                      ),
-                      style: TextStyle(color: Colors.amber.shade800),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.t(
-                      'Only Together expenses paid from a personal account create debt. Common-account expenses and contributions to the common account create no debt.',
-                      'Csak a saját számláról fizetett Közös kiadások keletkeztetnek tartozást. A közös számlás költések és befizetések nem módosítják az egyenleget.',
-                    ),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: () => _showProposeDialog(
-                      context,
-                      db,
-                      fx,
-                      meId,
-                      partnerId,
-                      summary,
-                    ),
-                    icon: const Icon(Icons.send_outlined),
-                    label: Text(
-                      l10n.t('Propose Settlement', 'Elszámolás kezdeményezése'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            l10n.t('Settlement History', 'Elszámolási előzmények'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          if (db.settlements.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  l10n.t(
-                    'No settlements proposed yet.',
-                    'Még nincs rögzített elszámolás.',
-                  ),
-                ),
-              ),
-            ),
-          for (final s in db.settlements)
-            Builder(
-              builder: (context) {
-                final fromName =
-                    db.findProfile(s.fromUser)?.displayName ?? s.fromUser;
-                final toName =
-                    db.findProfile(s.toUser)?.displayName ?? s.toUser;
-                final amtStr = Money(s.amountMinor, s.currency).format(
-                  locale: localeStr,
-                  hideAmounts: hideAmounts,
-                );
-                final status = s.status;
-                final needsMyConfirm = status == 'pending' &&
-                    ((s.fromUser == meId && !s.fromConfirmed) ||
-                        (s.toUser == meId && !s.toConfirmed) ||
-                        s.createdBy != meId);
-
-                final myPosting = db.settlementPostings
-                    .where(
-                      (p) => p.settlementId == s.id && p.userId == meId,
-                    )
-                    .firstOrNull;
-                final myPostingAccount = myPosting != null
-                    ? db.findAccount(myPosting.accountId)
-                    : null;
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+        appBar: AppBar(
+            leading: IconButton(
+                onPressed: () => AppShell.openDrawer(context),
+                icon: const Icon(Icons.menu),
+                tooltip:
+                    MaterialLocalizations.of(context).openAppDrawerTooltip),
+            title: Text(l10n.settleUp)),
+        body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
+            children: [
+              DuoCard(
+                  isHero: true,
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '$fromName → $toName • $amtStr',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Chip(
-                              visualDensity: VisualDensity.compact,
-                              label: Text(
-                                switch (status) {
-                                  'confirmed' =>
-                                    l10n.t('Confirmed', 'Jóváhagyva'),
-                                  'rejected' =>
-                                    l10n.t('Rejected', 'Elutasítva'),
-                                  _ => l10n.t('Pending', 'Függőben'),
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (s.note != null && s.note!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(s.note!),
-                          ),
-                        if (myPostingAccount != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '🔒 ${l10n.t('Private posting:', 'Privát könyvelés:')} ${myPostingAccount.name}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                        if (status == 'pending') ...[
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (needsMyConfirm)
-                                FilledButton.tonalIcon(
-                                  onPressed: () => _showConfirmDialog(
-                                    context,
-                                    db,
-                                    fx,
-                                    meId,
-                                    s,
-                                  ),
-                                  icon: const Icon(Icons.check),
-                                  label: Text(
-                                    l10n.t('Confirm', 'Jóváhagyás'),
-                                  ),
-                                ),
-                              const SizedBox(width: 8),
-                              TextButton.icon(
-                                onPressed: () {
-                                  db.upsertSettlement(
-                                    Settlement(
-                                      id: s.id,
-                                      householdId: s.householdId,
-                                      fromUser: s.fromUser,
-                                      toUser: s.toUser,
-                                      amountMinor: s.amountMinor,
-                                      currency: s.currency,
-                                      baseAmountMinor: s.baseAmountMinor,
-                                      fromConfirmed: s.fromConfirmed,
-                                      toConfirmed: s.toConfirmed,
-                                      rejectedBy: meId,
-                                      note: s.note,
-                                      createdBy: s.createdBy,
-                                      updatedAt: DateTime.now(),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.close),
-                                label: Text(l10n.t('Reject', 'Elutasítás')),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
+                        Text(
+                            !summary.someoneOwes
+                                ? l10n.t('All settled up', 'Minden elszámolva')
+                                : summary.partnerOwesMe
+                                    ? l10n.t('$partnerName owes $meName',
+                                        '$partnerName tartozik neked ($meName)')
+                                    : l10n.t('$meName owes $partnerName',
+                                        '$meName tartozik neki ($partnerName)'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(color: context.duo.onHeroSurface)),
+                        const SizedBox(height: 12),
+                        Text(
+                            Money(summary.absoluteOwedMinor)
+                                .format(locale: locale, hideAmounts: hide),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(color: context.duo.onHeroSurface)),
+                        const SizedBox(height: 12),
+                        Text(
+                            l10n.t(
+                                'Local records only; no bank payment is sent. Only approved settlements change this balance.',
+                                'Csak helyi rögzítés; nem indul banki utalás. Az egyenleget csak jóváhagyott elszámolások módosítják.'),
+                            style: TextStyle(color: context.duo.onHeroSurface)),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                            onPressed: db.household == null || me == partner
+                                ? null
+                                : () => _recordDialog(summary),
+                            icon: const Icon(Icons.edit_note),
+                            label: Text(l10n.t('Propose settlement',
+                                'Elszámolás kezdeményezése'))),
+                      ])),
+              const SizedBox(height: 20),
+              Text(
+                  l10n.t('Pending proposals (${pending.length})',
+                      'Függő javaslatok (${pending.length})'),
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (pending.isEmpty)
+                DuoCard(
+                    child: Text(l10n.t(
+                        'No pending proposals.', 'Nincs függő javaslat.'))),
+              ...pending.map(recordCard),
+              const SizedBox(height: 16),
+              Card(
+                  child: ExpansionTile(
+                      title: Text(l10n.t('How the balance is calculated',
+                          'Az egyenleg számítása')),
+                      childrenPadding: const EdgeInsets.all(16),
+                      children: [
+                    Text(l10n.t(
+                        'Shared expenses paid from personal accounts create debt according to their recorded splits. Common-account spending and contributions create no personal debt. Confirmed settlements reduce the debt.',
+                        'A személyes számláról fizetett közös kiadások a rögzített megosztás szerint hoznak létre tartozást. A közös számla kiadásai és befizetései nem keletkeztetnek személyes tartozást. A jóváhagyott elszámolások csökkentik a tartozást.')),
+                    for (final t in db.transactions.where((t) =>
+                        t.kind == TxnKind.expense &&
+                        t.scope == Scope.together &&
+                        !t.paidFromCommon &&
+                        !t.isContribution))
+                      ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(t.merchant ?? l10n.expense,
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(MaterialLocalizations.of(context)
+                              .formatMediumDate(t.occurredOn)),
+                          onTap: () => showTransactionDetails(context, t)),
+                  ])),
+              const SizedBox(height: 16),
+              Card(
+                  child: ExpansionTile(
+                      title: Text(l10n.t(
+                          'Settlement history (${completed.length})',
+                          'Elszámolási előzmények (${completed.length})')),
+                      childrenPadding: const EdgeInsets.all(12),
+                      children: completed.map(recordCard).toList())),
+            ]));
   }
 }

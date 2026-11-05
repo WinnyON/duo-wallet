@@ -248,7 +248,7 @@ void main() {
       final huf = fx.convert(eur20, CurrencyCode.huf);
       expect(huf.currency, CurrencyCode.huf);
       expect(huf.amountMinor, 800000); // 8 000 Ft in minor units
-      expect(huf.format(locale: 'hu'), '8 000 Ft');
+      expect(huf.format(locale: 'hu'), '8\u00a0000 Ft');
     });
   });
 

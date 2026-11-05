@@ -11,38 +11,69 @@ abstract class RemoteSyncAdapter {
   );
 }
 
+abstract class SnapshotSyncAdapter implements RemoteSyncAdapter {
+  Future<Map<String, dynamic>> fetchSnapshot();
+}
+
 class SyncEngine {
   final AppDatabase db;
   final RemoteSyncAdapter? remote;
+  final bool Function()? isCurrent;
+  void _checkSession() {
+    if (isCurrent != null && !isCurrent!()) throw StateError('Session changed');
+  }
+
   static const _uuid = Uuid();
 
-  SyncEngine({required this.db, this.remote});
+  SyncEngine({required this.db, this.remote, this.isCurrent});
 
   /// Deterministic UUIDv5 for recurring transactions (`rule_id + due_date`)
   /// so server cron and offline phones merge into the exact same transaction row.
   static String deterministicRecurringTxnId(String ruleId, DateTime dueDate) {
     final dayIso = dueDate.toIso8601String().split('T').first;
-    return _uuid.v5(Namespace.url.value, 'duo-wallet:recurring:$ruleId:$dayIso');
+    return _uuid.v5(
+        Namespace.url.value, 'duo-wallet:recurring:$ruleId:$dayIso');
   }
 
   Future<int> pushOutbox() async {
+    _checkSession();
     final pending = db.pendingOutbox;
     if (pending.isEmpty) return 0;
-    if (remote != null) {
-      final byTable = <String, List<Map<String, dynamic>>>{};
-      for (final item in pending) {
-        byTable.putIfAbsent(item.tableName, () => []).add(item.payload);
-      }
-      for (final entry in byTable.entries) {
-        await remote!.upsertRows(entry.key, entry.value);
-      }
+    if (remote == null) return 0;
+    const order = [
+      'households',
+      'profiles',
+      'categories',
+      'accounts',
+      'budgets',
+      'goals',
+      'recurring_rules',
+      'transactions',
+      'settlements',
+      'settlement_postings',
+      'account_valuations',
+      'activity'
+    ];
+    final sorted = [...pending]..sort((a, b) =>
+        order.indexOf(a.tableName).compareTo(order.indexOf(b.tableName)));
+    for (final item in sorted) {
+      await remote!.upsertRows(item.tableName, [item.payload]);
+      // Acknowledge only this exact queued version after the server accepted it.
+      _checkSession();
+      db.clearOutboxIds([item.id]);
     }
-    db.clearOutboxIds(pending.map((e) => e.id));
     return pending.length;
   }
 
   Future<void> pullUpdates() async {
     if (remote == null) return;
+    if (remote is SnapshotSyncAdapter) {
+      final data = await (remote as SnapshotSyncAdapter).fetchSnapshot();
+      _checkSession();
+      db.replaceRemoteSnapshot(data);
+      db.lastPulledAt = DateTime.now();
+      return;
+    }
     final since = db.lastPulledAt;
     final txns = await remote!.fetchChangedRows('transactions', since);
     for (final raw in txns) {

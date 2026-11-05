@@ -1,0 +1,6 @@
+flutter analyze
+Analyzing app...
+No issues found! (ran in 1.1s)
+
+git diff --check
+Passed (exit 0; no whitespace errors).

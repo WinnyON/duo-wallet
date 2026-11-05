@@ -47,14 +47,16 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             isShrinkResources = false
         }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.name.contains("Release") } && !keystorePropertiesFile.exists()) {
+        throw GradleException("Release signing requires android/key.properties; debug signing is not allowed.")
     }
 }
 

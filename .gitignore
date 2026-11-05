@@ -20,3 +20,16 @@ app/android/key.properties
 *.iml
 .DS_Store
 *.log
+
+# Local Supabase state and credentials
+supabase/.temp/
+supabase/.branches/
+app/supabase/
+.env
+.env.*
+!.env.example
+app/config/*.json
+!app/config/*.example.json
+
+# Release artifacts and private signing backups
+dist/

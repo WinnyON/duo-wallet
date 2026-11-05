@@ -1,6 +1,5 @@
 import 'package:duo_wallet/app.dart';
 import 'package:duo_wallet/core/db/app_database.dart';
-import 'package:duo_wallet/core/domain/views.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,50 +21,40 @@ void main() {
 
       // 1. Dashboard loads with default English strings and overview cards
       expect(find.textContaining('Duo Wallet'), findsWidgets);
-      expect(find.text('Transactions'), findsWidgets);
+      expect(find.byIcon(Icons.receipt_long_outlined), findsOneWidget);
 
-      // 2. Navigate to Transactions tab via bottom NavigationBar
-      await tester.tap(find.text('Transactions').last);
+      // 2. Navigate to Transactions tab via icon-only bottom bar
+      await tester.tap(find.byIcon(Icons.receipt_long_outlined));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byType(SegmentedButton<ExpenseView>),
-        findsOneWidget,
-      );
-      expect(find.text('Together Expenses (Full Amount)'), findsOneWidget);
+      expect(find.byType(ChoiceChip), findsNWidgets(3));
+      expect(find.text('All-time spending · current filters'), findsOneWidget);
 
-      // Switch to Individual view tab
-      await tester.tap(find.text('Individual'));
+      // Switch to Personal view tab
+      await tester.tap(find.text('Personal'));
       await tester.pumpAndSettle();
-      expect(
-        find.text('My Individual Expenses (🔒 Private)'),
-        findsOneWidget,
-      );
+      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Personal')).selected, isTrue);
 
-      // Switch to My Total view tab
-      await tester.tap(find.text('My Total'));
+      // Switch to All Mine view tab
+      await tester.tap(find.text('All Mine'));
       await tester.pumpAndSettle();
-      expect(
-        find.text('My Total (Individual + My Share of Together)'),
-        findsOneWidget,
-      );
+      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All Mine')).selected, isTrue);
 
-      // 3. Navigate to Settle Up tab
-      await tester.tap(find.text('Settle Up').last);
+      // 3. Navigate to Settle Up tab via icon-only bottom bar
+      await tester.tap(find.byIcon(Icons.handshake_outlined));
       await tester.pumpAndSettle();
-      expect(find.text('Propose Settlement'), findsOneWidget);
+      expect(find.text('Propose settlement'), findsOneWidget);
 
       // 4. Switch language EN -> HU and verify Hungarian localization
       container.read(appLocaleProvider.notifier).state = 'hu';
       await tester.pumpAndSettle();
 
       expect(find.text('Elszámolás kezdeményezése'), findsOneWidget);
-      expect(find.text('Tranzakciók'), findsWidgets);
 
       // Switch back HU -> EN
       container.read(appLocaleProvider.notifier).state = 'en';
       await tester.pumpAndSettle();
-      expect(find.text('Propose Settlement'), findsOneWidget);
+      expect(find.text('Propose settlement'), findsOneWidget);
     },
   );
 }

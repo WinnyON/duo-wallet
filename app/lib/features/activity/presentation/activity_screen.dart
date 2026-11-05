@@ -5,18 +5,20 @@ import 'package:intl/intl.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/money.dart';
+import '../../../theme.dart';
+import '../../../router.dart';
 
 class ActivityScreen extends ConsumerWidget {
   const ActivityScreen({super.key});
 
   IconData _iconForEvent(String eventType) => switch (eventType) {
-    'expense_added' => Icons.receipt_long_outlined,
-    'settlement_proposed' => Icons.send_outlined,
-    'settlement_confirmed' => Icons.handshake_outlined,
-    'goal_milestone' => Icons.flag_outlined,
-    'contribution_added' => Icons.account_balance_outlined,
-    _ => Icons.notifications_none_outlined,
-  };
+        'expense_added' => Icons.receipt_long_outlined,
+        'settlement_proposed' => Icons.send_outlined,
+        'settlement_confirmed' => Icons.check_circle_outline_rounded,
+        'goal_milestone' => Icons.flag_outlined,
+        'contribution_added' => Icons.account_balance_outlined,
+        _ => Icons.notifications_none_outlined,
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,22 +40,27 @@ class ActivityScreen extends ConsumerWidget {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.activity)),
+      appBar: AppBar(
+          leading: IconButton(
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => AppShell.goBackOrHome(context)),
+          title: Text(l10n.activity)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
-                  const Icon(Icons.lock_outline, size: 18),
-                  const SizedBox(width: 8),
+                  const DuoIconBox(Icons.lock_outline),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       l10n.t(
-                        'Only shared 👥 events appear here (Together expenses, settlements, shared goals, and common-account contributions). Private actions never generate activity entries.',
-                        'Itt csak a közös 👥 események jelennek meg (Közös kiadások, elszámolások, közös célok és befizetések). A privát műveletek nem kerülnek a hírfolyamba.',
+                        'Only shared events appear here (Together expenses, settlements, shared goals, and common-account contributions). Private actions never generate activity entries.',
+                        'Itt csak a közös események jelennek meg (Közös kiadások, elszámolások, közös célok és befizetések). A privát műveletek nem kerülnek a hírfolyamba.',
                       ),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -79,22 +86,29 @@ class ActivityScreen extends ConsumerWidget {
             Card(
               margin: const EdgeInsets.only(bottom: 10),
               child: ListTile(
-                leading: CircleAvatar(
-                  child: Icon(_iconForEvent(act.eventType)),
+                leading: MerchantAvatar(
+                  name: act.eventType,
+                  icon: _iconForEvent(act.eventType),
                 ),
-                title: Text(act.localizedSummary(localeStr)),
-                subtitle: Text(
-                  DateFormat('yyyy-MM-dd HH:mm').format(act.createdAt),
+                title: Text(
+                  activityDisplaySummary(act,
+                      locale: localeStr, hideAmounts: hideAmounts),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
-                trailing: act.amountMinor != null
-                    ? Text(
-                        Money(act.amountMinor!, act.currency).format(
-                          locale: localeStr,
-                          hideAmounts: hideAmounts,
-                        ),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      )
-                    : null,
+                subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(DateFormat.yMMMd(localeStr)
+                          .add_Hm()
+                          .format(act.createdAt)),
+                      if (act.amountMinor != null)
+                        Text(
+                            Money(act.amountMinor!, act.currency).format(
+                                locale: localeStr, hideAmounts: hideAmounts),
+                            style: Theme.of(context).textTheme.titleSmall),
+                    ]),
               ),
             ),
         ],

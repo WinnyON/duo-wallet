@@ -107,7 +107,7 @@ class Household {
     'default_split_pct': defaultSplitPct,
     'invite_code': inviteCode,
     'emergency_fund_months': emergencyFundMonths,
-    'created_at': createdAt.toIso8601String(),
+    'created_at': createdAt.toUtc().toIso8601String(),
   };
 
   factory Household.fromJson(Map<String, dynamic> j) => Household(
@@ -127,6 +127,8 @@ class Profile {
   final String displayName;
   final String color;
   final String locale;
+  final String avatarType; // 'man', 'woman', 'image'
+  final String? avatarUrl;
   final int? monthlyCommonContributionMinor;
   final DateTime updatedAt;
 
@@ -136,6 +138,8 @@ class Profile {
     required this.displayName,
     this.color = '#4F46E5',
     this.locale = 'hu',
+    this.avatarType = 'man',
+    this.avatarUrl,
     this.monthlyCommonContributionMinor,
     required this.updatedAt,
   });
@@ -146,8 +150,10 @@ class Profile {
     'display_name': displayName,
     'color': color,
     'locale': locale,
+    'avatar_type': avatarType,
+    'avatar_url': avatarUrl,
     'monthly_common_contribution_minor': monthlyCommonContributionMinor,
-    'updated_at': updatedAt.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
   };
 
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
@@ -156,6 +162,8 @@ class Profile {
     displayName: j['display_name'] as String? ?? '',
     color: j['color'] as String? ?? '#4F46E5',
     locale: j['locale'] as String? ?? 'hu',
+    avatarType: j['avatar_type'] as String? ?? 'man',
+    avatarUrl: j['avatar_url'] as String?,
     monthlyCommonContributionMinor: (j['monthly_common_contribution_minor'] as num?)?.toInt(),
     updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? '') ?? DateTime.now(),
   );
@@ -227,8 +235,8 @@ class Account {
     'icon': icon,
     'color': color,
     'archived': archived,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory Account.fromJson(Map<String, dynamic> j) => Account(
@@ -398,9 +406,9 @@ class Txn {
     'note': note,
     'recurring_rule_id': recurringRuleId,
     'created_by': createdBy,
-    'created_at': createdAt.toIso8601String(),
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
     'base_shares': baseShares,
     'shares': shares,
     'tags': tags,
@@ -481,8 +489,8 @@ class Category {
     'is_essential': isEssential,
     'parent_id': parentId,
     'sort_order': sortOrder,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory Category.fromJson(Map<String, dynamic> j) => Category(
@@ -532,8 +540,8 @@ class Budget {
     'category_id': categoryId,
     'amount_minor': amountMinor,
     'rollover': rollover,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory Budget.fromJson(Map<String, dynamic> j) => Budget(
@@ -602,8 +610,8 @@ class Settlement {
     'rejected_by': rejectedBy,
     'note': note,
     'created_by': createdBy,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory Settlement.fromJson(Map<String, dynamic> j) => Settlement(
@@ -713,8 +721,8 @@ class RecurringRule {
     'is_subscription': isSubscription,
     'split_pct_creator': splitPctCreator,
     'created_by': createdBy,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory RecurringRule.fromJson(Map<String, dynamic> j) => RecurringRule(
@@ -763,7 +771,7 @@ class AccountValuation {
     'valued_on': valuedOn.toIso8601String().split('T').first,
     'value_minor': valueMinor,
     'note': note,
-    'created_at': createdAt.toIso8601String(),
+    'created_at': createdAt.toUtc().toIso8601String(),
   };
 
   factory AccountValuation.fromJson(Map<String, dynamic> j) => AccountValuation(
@@ -828,8 +836,8 @@ class Goal {
     'annual_interest_rate_pct': annualInterestRatePct,
     'linked_account_ids': linkedAccountIds,
     'contributions_by_user': contributionsByUser,
-    'updated_at': updatedAt.toIso8601String(),
-    'deleted_at': deletedAt?.toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
   factory Goal.fromJson(Map<String, dynamic> j) => Goal(
@@ -888,7 +896,7 @@ class ActivityEvent {
     'summary_hu': summaryHu,
     'amount_minor': amountMinor,
     'currency': currency.code,
-    'created_at': createdAt.toIso8601String(),
+    'created_at': createdAt.toUtc().toIso8601String(),
   };
 
   factory ActivityEvent.fromJson(Map<String, dynamic> j) => ActivityEvent(

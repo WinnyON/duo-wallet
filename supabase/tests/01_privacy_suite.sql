@@ -3,10 +3,10 @@ create extension if not exists pgtap;
 select plan(20);
 
 -- Create 3 test auth users (Sam = user A, Anna = user B, Intruder = user C)
-insert into auth.users (id, email) values
-  ('00000000-0000-0000-0000-000000000001', 'sam@example.com'),
-  ('00000000-0000-0000-0000-000000000002', 'anna@example.com'),
-  ('00000000-0000-0000-0000-000000000003', 'intruder@example.com')
+insert into auth.users (id, email, email_confirmed_at) values
+  ('00000000-0000-0000-0000-000000000001', 'sam@example.com',now()),
+  ('00000000-0000-0000-0000-000000000002', 'anna@example.com',now()),
+  ('00000000-0000-0000-0000-000000000003', 'intruder@example.com',now())
 on conflict (id) do nothing;
 
 -- Authenticate as Sam (User A) and create household
@@ -378,6 +378,8 @@ insert into recurring_rules (
   true
 );
 
+-- Scheduling is service-only; an ordinary household member cannot run global jobs.
+set local role postgres;
 select is(
   generate_recurring(current_date) + generate_recurring(current_date),
   1,

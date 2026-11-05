@@ -1,12 +1,11 @@
-// ignore: unused_import
-import 'package:intl/intl.dart' as intl;
+import 'package:flutter/widgets.dart';
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
 
 /// The translations for Hungarian (`hu`).
 class AppLocalizationsHu extends AppLocalizations {
-  AppLocalizationsHu([String locale = 'hu']) : super(locale);
+  AppLocalizationsHu([String locale = 'hu']) : super(Locale(locale));
 
   @override
   String get appName => 'Duo Wallet';
@@ -54,10 +53,10 @@ class AppLocalizationsHu extends AppLocalizations {
   String get viewTogether => 'Közös';
 
   @override
-  String get viewIndividual => 'Egyéni';
+  String get viewIndividual => 'Saját';
 
   @override
-  String get viewMyTotal => 'Saját összesen';
+  String get viewMyTotal => 'Összes saját';
 
   @override
   String get quickAdd => 'Gyors rögzítés';

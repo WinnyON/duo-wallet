@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart';
+import '../../../router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/db/tables/tables.dart';
 import '../../../core/domain/splits.dart';
+import '../../../core/domain/recurring_schedule.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/currency.dart';
 import '../../../core/money/fx_service.dart';
 import '../../../core/money/money.dart';
 import '../../../core/sync/sync_engine.dart';
+import '../../../theme.dart';
 
 class RecurringScreen extends ConsumerStatefulWidget {
   const RecurringScreen({super.key});
@@ -29,16 +33,21 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
     String partnerId,
   ) {
     final txnId = SyncEngine.deterministicRecurringTxnId(r.id, r.nextDueOn);
+    if (db.transactions.any((t) => t.id == txnId)) return;
     final acc = db.findAccount(r.accountId);
     final paidFromCommon = acc?.isCommon ?? false;
-    final effectiveScope = paidFromCommon ? Scope.together : r.scope;
+    final effectiveScope = paidFromCommon
+        ? Scope.together
+        : partnerId.isEmpty
+            ? Scope.individual
+            : r.scope;
     final money = Money(r.amountMinor, r.currency);
     final baseMinor = fx.convert(money, CurrencyCode.huf).amountMinor;
     final acctMinor = acc != null
         ? fx.convert(money, acc.currency).amountMinor
         : r.amountMinor;
 
-    final split = effectiveScope == Scope.together
+    final split = effectiveScope == Scope.together && partnerId.isNotEmpty
         ? calculatePercentageSplit(
             amountMinor: r.amountMinor,
             baseAmountMinor: baseMinor,
@@ -74,7 +83,7 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
         toAccountId: r.toAccountId,
         categoryId: r.categoryId,
         merchant: r.title,
-        note: 'Recurring (${r.frequency})',
+        note: null,
         recurringRuleId: r.id,
         createdBy: r.createdBy,
         createdAt: now,
@@ -86,205 +95,345 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
   }
 
   Future<void> _showAddRuleDialog(
-    BuildContext context,
-    AppDatabase db,
-    String meId,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final visibleAccounts = db.accounts
-        .where((a) => a.isCommon || a.ownerId == meId)
+      BuildContext context, AppDatabase db, String meId,
+      {RecurringRule? existing}) async {
+    final l = AppLocalizations.of(context);
+    final accounts = db.accounts
+        .where((a) => !a.archived && (a.isCommon || a.ownerId == meId))
         .toList();
-    if (visibleAccounts.isEmpty) return;
+    if (accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              l.t('Create an account first.', 'Előbb hozz létre számlát.'))));
+      return;
+    }
+    final title = TextEditingController(text: existing?.title ?? '');
+    final amount = TextEditingController(
+        text: existing == null ? '' : (existing.amountMinor / 100).toString());
+    var accountId = existing?.accountId ?? accounts.first.id;
+    if (!accounts.any((a) => a.id == accountId)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l.t('This rule uses an unavailable account.',
+              'A szabály számlája nem érhető el.'))));
+      return;
+    }
+    var category = existing?.categoryId;
+    final categories = db.categories.where((c) => c.kind == 'expense').toList();
+    final hasPartner = ref.read(partnerUserIdProvider).isNotEmpty;
+    var scope =
+        hasPartner ? existing?.scope ?? Scope.together : Scope.individual;
+    var currency = existing?.currency ?? accounts.first.currency;
+    var frequency = existing?.frequency ?? 'monthly';
+    var due = existing?.nextDueOn ?? DateTime.now();
+    var pct = existing?.splitPctCreator ?? 50;
+    var active = existing?.autoCreate ?? true;
+    final form = GlobalKey<FormState>();
+    final initialTitle = title.text;
+    final initialAmount = amount.text;
+    final initialAccount = accountId;
+    final initialCategory = category;
+    final initialScope = scope;
+    final initialCurrency = currency;
+    final initialFrequency = frequency;
+    final initialDue = due;
+    final initialPct = pct;
+    final initialActive = active;
+    bool dirty() =>
+        title.text != initialTitle ||
+        amount.text != initialAmount ||
+        accountId != initialAccount ||
+        category != initialCategory ||
+        scope != initialScope ||
+        currency != initialCurrency ||
+        frequency != initialFrequency ||
+        due != initialDue ||
+        pct != initialPct ||
+        active != initialActive;
+    final route = DialogRoute<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          Future<void> close() async {
+            if (await confirmDiscardChanges(ctx, dirty: dirty())) {
+              if (ctx.mounted) Navigator.pop(ctx);
+            }
+          }
 
-    final titleCtrl = TextEditingController();
-    final amountCtrl = TextEditingController();
-    const kind = TxnKind.expense;
-    var scope = Scope.together;
-    var currency = CurrencyCode.huf;
-    var frequency = 'monthly';
-    var isSubscription = true;
-    var autoCreate = true;
-    var accountId = visibleAccounts.first.id;
-    final String? categoryId = db.categories.firstOrNull?.id;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(
-            l10n.t('Add Recurring Rule', 'Új ismétlődő szabály'),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleCtrl,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Title (e.g. Netflix, Rent)', 'Megnevezés'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SegmentedButton<Scope>(
-                  segments: [
-                    ButtonSegment(
-                      value: Scope.together,
-                      label: Text('👥 ${l10n.viewTogether}'),
-                    ),
-                    ButtonSegment(
-                      value: Scope.individual,
-                      label: Text('🔒 ${l10n.viewIndividual}'),
-                    ),
-                  ],
-                  selected: {scope},
-                  onSelectionChanged: (s) =>
-                      setDialogState(() => scope = s.first),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: amountCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: l10n.t('Amount', 'Összeg'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<CurrencyCode>(
-                        initialValue: currency,
-                        decoration: InputDecoration(
-                          labelText: l10n.t('Currency', 'Pénznem'),
-                        ),
-                        items: CurrencyCode.values
-                            .map(
-                              (c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c.code),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) setDialogState(() => currency = v);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: frequency,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Frequency', 'Gyakoriság'),
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'weekly',
-                      child: Text(l10n.t('Weekly', 'Heti')),
-                    ),
-                    DropdownMenuItem(
-                      value: 'monthly',
-                      child: Text(l10n.t('Monthly', 'Havi')),
-                    ),
-                    DropdownMenuItem(
-                      value: 'yearly',
-                      child: Text(l10n.t('Yearly', 'Éves')),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setDialogState(() => frequency = v);
+          return StatefulBuilder(
+              builder: (ctx, update) => PopScope(
+                  canPop: false,
+                  onPopInvokedWithResult: (didPop, result) {
+                    if (!didPop) close();
                   },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: accountId,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Account', 'Számla'),
-                  ),
-                  items: visibleAccounts
-                      .map(
-                        (a) => DropdownMenuItem(
-                          value: a.id,
-                          child: Text(a.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) setDialogState(() => accountId = v);
-                  },
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l10n.t('Subscription', 'Előfizetés')),
-                  value: isSubscription,
-                  onChanged: (v) => setDialogState(() => isSubscription = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    l10n.t('Auto-create on due date', 'Automatikus rögzítés'),
-                  ),
-                  value: autoCreate,
-                  onChanged: (v) => setDialogState(() => autoCreate = v),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.t('Cancel', 'Mégse')),
-            ),
-            FilledButton(
-              onPressed: () {
-                final title = titleCtrl.text.trim();
-                final major =
-                    double.tryParse(amountCtrl.text.trim().replaceAll(',', '.')) ??
-                        0;
-                if (title.isEmpty || major <= 0) return;
-                final acc = db.findAccount(accountId);
-                final effectiveScope =
-                    (acc?.isCommon ?? false) ? Scope.together : scope;
-                final vis = effectiveScope == Scope.together
-                    ? VisibilityLevel.shared
-                    : VisibilityLevel.private;
-                final now = DateTime.now();
+                  child: AlertDialog(
+                    title: Text(existing == null
+                        ? l.t('New recurring rule', 'Új ismétlődő szabály')
+                        : l.t('Edit recurring rule',
+                            'Ismétlődő szabály szerkesztése')),
+                    content: SingleChildScrollView(
+                        child: Form(
+                            key: form,
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(l.t(
+                                      'Records are created only when you choose Record due bills. No automatic background scheduling.',
+                                      'A tételek csak az Esedékes számlák rögzítése gombbal készülnek el. Nincs automatikus háttérütemezés.')),
+                                  TextFormField(
+                                      controller: title,
+                                      decoration: InputDecoration(
+                                          labelText:
+                                              l.t('Title', 'Megnevezés')),
+                                      validator: (v) =>
+                                          v == null || v.trim().isEmpty
+                                              ? l.t('Enter a title',
+                                                  'Adj meg megnevezést')
+                                              : null),
+                                  TextFormField(
+                                      controller: amount,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      decoration: InputDecoration(
+                                          labelText: l.t('Amount', 'Összeg')),
+                                      validator: (v) =>
+                                          parsePositiveAmount(v ?? '') == null
+                                              ? l.t('Enter a positive amount',
+                                                  'Adj meg pozitív összeget')
+                                              : null),
+                                  DropdownButtonFormField<CurrencyCode>(
+                                      initialValue: currency,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                          labelText:
+                                              l.t('Currency', 'Pénznem')),
+                                      items: CurrencyCode.values
+                                          .map((v) => DropdownMenuItem(
+                                              value: v, child: Text(v.code)))
+                                          .toList(),
+                                      onChanged: (v) {
+                                        if (v != null) {
+                                          update(() => currency = v);
+                                        }
+                                      }),
+                                  DropdownButtonFormField<String>(
+                                      initialValue: accountId,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                          labelText: l.t('Account', 'Számla')),
+                                      items: accounts
+                                          .map((a) => DropdownMenuItem(
+                                              value: a.id, child: Text(a.name)))
+                                          .toList(),
+                                      onChanged: (v) {
+                                        if (v != null) {
+                                          update(() => accountId = v);
+                                        }
+                                      }),
+                                  DropdownButtonFormField<String>(
+                                      initialValue: category,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                          labelText:
+                                              l.t('Category', 'Kategória')),
+                                      items: categories
+                                          .map((c) => DropdownMenuItem(
+                                              value: c.id,
+                                              child: Text(c.localizedName(
+                                                  l.locale.languageCode))))
+                                          .toList(),
+                                      onChanged: (v) =>
+                                          update(() => category = v),
+                                      validator: (v) => v == null
+                                          ? l.t('Choose a category',
+                                              'Válassz kategóriát')
+                                          : null),
+                                  DropdownButtonFormField<String>(
+                                      initialValue: frequency,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                          labelText:
+                                              l.t('Frequency', 'Gyakoriság')),
+                                      items: [
+                                        'daily',
+                                        'weekly',
+                                        'monthly',
+                                        'yearly'
+                                      ]
+                                          .map((f) => DropdownMenuItem(
+                                              value: f,
+                                              child: Text(_frequency(l, f))))
+                                          .toList(),
+                                      onChanged: (v) {
+                                        if (v != null) {
+                                          update(() => frequency = v);
+                                        }
+                                      }),
+                                  SegmentedButton<Scope>(
+                                      segments: [
+                                        ButtonSegment(
+                                            value: Scope.together,
+                                            enabled: hasPartner,
+                                            label:
+                                                Text(l.t('Shared', 'Közös'))),
+                                        ButtonSegment(
+                                            value: Scope.individual,
+                                            label:
+                                                Text(l.t('Personal', 'Saját')))
+                                      ],
+                                      selected: {
+                                        scope
+                                      },
+                                      onSelectionChanged: (s) =>
+                                          update(() => scope = s.first)),
+                                  if (!hasPartner)
+                                    Text(l.t(
+                                        'Invite a partner to split expenses.',
+                                        'Hívj meg egy társat a kiadások megosztásához.')),
+                                  if (scope == Scope.together &&
+                                      hasPartner) ...[
+                                    Text(l.t('Creator share: $pct%',
+                                        'Létrehozó része: $pct%')),
+                                    Slider(
+                                        value: pct.toDouble(),
+                                        min: 0,
+                                        max: 100,
+                                        divisions: 20,
+                                        label: '$pct%',
+                                        onChanged: (v) =>
+                                            update(() => pct = v.round())),
+                                  ],
+                                  TextButton.icon(
+                                      icon: const Icon(Icons.calendar_today),
+                                      label: Text(
+                                          '${l.t("Next due", "Következő esedékesség")}: ${DateFormat.yMMMd(l.locale.languageCode).format(due)}'),
+                                      onPressed: () async {
+                                        final date = await showDatePicker(
+                                            context: ctx,
+                                            initialDate: due,
+                                            firstDate: DateTime(2000),
+                                            lastDate: DateTime(2200));
+                                        if (date != null) {
+                                          update(() => due = date);
+                                        }
+                                      }),
+                                  SwitchListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(l.t('Active', 'Aktív')),
+                                      value: active,
+                                      onChanged: (v) =>
+                                          update(() => active = v)),
+                                ]))),
+                    actions: [
+                      TextButton(
+                          onPressed: close,
+                          child: Text(l.t('Cancel', 'Mégse'))),
+                      FilledButton(
+                          onPressed: () {
+                            if (!form.currentState!.validate()) return;
+                            final common = accounts
+                                .firstWhere((a) => a.id == accountId)
+                                .isCommon;
+                            final effectiveScope = common
+                                ? Scope.together
+                                : hasPartner
+                                    ? scope
+                                    : Scope.individual;
+                            final json = existing?.toJson() ??
+                                RecurringRule(
+                                        id: _uuid.v4(),
+                                        householdId: db.household?.id ??
+                                            'hh-default-001',
+                                        title: title.text.trim(),
+                                        amountMinor: 0,
+                                        accountId: accountId,
+                                        nextDueOn: due,
+                                        createdBy: meId,
+                                        updatedAt: DateTime.now())
+                                    .toJson();
+                            json.addAll({
+                              'title': title.text.trim(),
+                              'amount_minor': Money.fromMajor(
+                                      parsePositiveAmount(amount.text)!,
+                                      currency)
+                                  .amountMinor,
+                              'currency': currency.code,
+                              'account_id': accountId,
+                              'category_id': category,
+                              'frequency': frequency,
+                              'next_due_on': due.toIso8601String(),
+                              'scope': effectiveScope.value,
+                              'visibility': effectiveScope == Scope.together
+                                  ? 'shared'
+                                  : 'private',
+                              'split_pct_creator': hasPartner ? pct : 100,
+                              'auto_create': active,
+                              'updated_at': DateTime.now().toIso8601String()
+                            });
+                            db.upsertRecurringRule(
+                                RecurringRule.fromJson(json));
+                            Navigator.pop(ctx);
+                          },
+                          child: Text(l.t('Save', 'Mentés')))
+                    ],
+                  )));
+        });
+    await Navigator.of(context).push(route);
+    await route.completed;
+    title.dispose();
+    amount.dispose();
+  }
 
-                db.upsertRecurringRule(
-                  RecurringRule(
-                    id: _uuid.v4(),
-                    householdId: db.household?.id ?? 'hh-default-001',
-                    title: title,
-                    kind: kind,
-                    scope: effectiveScope,
-                    visibility: vis,
-                    amountMinor: Money.fromMajor(major, currency).amountMinor,
-                    currency: currency,
-                    accountId: accountId,
-                    categoryId: categoryId,
-                    frequency: frequency,
-                    nextDueOn: DateTime(now.year, now.month, now.day),
-                    autoCreate: autoCreate,
-                    isSubscription: isSubscription,
-                    createdBy: meId,
-                    updatedAt: now,
-                  ),
-                );
-                Navigator.of(ctx).pop();
-              },
-              child: Text(l10n.t('Save', 'Mentés')),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _frequency(AppLocalizations l, String f) => switch (f) {
+        'weekly' => l.t('Weekly', 'Heti'),
+        'yearly' => l.t('Yearly', 'Éves'),
+        'daily' => l.t('Daily', 'Napi'),
+        _ => l.t('Monthly', 'Havi')
+      };
+
+  int _recordDue(AppDatabase db, FxService fx, RecurringRule rule, String me,
+      String partner) {
+    if (!rule.autoCreate || rule.deletedAt != null) return 0;
+    final account = db.findAccount(rule.accountId);
+    if (account == null ||
+        account.archived ||
+        (!account.isCommon && account.ownerId != me)) {
+      return 0;
+    }
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    var current = rule;
+    var count = 0;
+    // The earliest generated occurrence retains the intended day after February.
+    final previous = db.transactions
+        .where((t) => t.recurringRuleId == rule.id)
+        .toList()
+      ..sort((a, b) => a.occurredOn.compareTo(b.occurredOn));
+    var anchorDay =
+        previous.isEmpty ? rule.nextDueOn.day : previous.first.occurredOn.day;
+    if (previous.isNotEmpty &&
+        nextRecurringDate(previous.last.occurredOn, rule.frequency,
+                anchorDay: anchorDay) !=
+            rule.nextDueOn) {
+      anchorDay = rule.nextDueOn.day;
+    }
+    while (current.nextDueOn.isBefore(tomorrow)) {
+      final id =
+          SyncEngine.deterministicRecurringTxnId(current.id, current.nextDueOn);
+      if (!db.transactions.any((t) => t.id == id)) {
+        _generateFromRule(db, fx, current, me, partner);
+        count++;
+      }
+      current = RecurringRule.fromJson({
+        ...current.toJson(),
+        'next_due_on': nextRecurringDate(current.nextDueOn, current.frequency,
+                anchorDay: anchorDay)
+            .toIso8601String(),
+        'updated_at': now.toIso8601String()
+      });
+    }
+    db.upsertRecurringRule(current);
+    return count;
   }
 
   @override
@@ -292,175 +441,112 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
     ref.watch(dbTickProvider);
     final db = ref.watch(appDatabaseProvider);
     final fx = ref.watch(fxServiceProvider);
-    final meId = ref.watch(currentUserIdProvider);
-    final partnerId = ref.watch(partnerUserIdProvider);
-    final hideAmounts = ref.watch(hideAmountsProvider);
-    final l10n = AppLocalizations.of(context);
-    final localeStr = l10n.locale.languageCode;
-
+    final me = ref.watch(currentUserIdProvider);
+    final partner = ref.watch(partnerUserIdProvider);
+    final hidden = ref.watch(hideAmountsProvider);
+    final l = AppLocalizations.of(context);
     final rules = db.recurringRules
-        .where(
-          (r) =>
-              r.visibility == VisibilityLevel.shared || r.createdBy == meId,
-        )
+        .where((r) =>
+            r.deletedAt == null &&
+            (r.visibility == VisibilityLevel.shared || r.createdBy == me))
         .toList()
       ..sort((a, b) => a.nextDueOn.compareTo(b.nextDueOn));
-
-    var monthlyFixedMinor = 0;
-    for (final r in rules) {
-      if (r.kind != TxnKind.expense) continue;
-      final baseMinor =
-          fx.convert(Money(r.amountMinor, r.currency), CurrencyCode.huf)
-              .amountMinor;
-      final factor = switch (r.frequency) {
-        'weekly' => 52 / 12,
-        'yearly' => 1 / 12,
-        _ => 1.0,
-      };
-      monthlyFixedMinor += (baseMinor * factor).round();
-    }
-    final yearlyFixedMinor = monthlyFixedMinor * 12;
-
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.recurring),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showAddRuleDialog(context, db, meId),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.t('Monthly Fixed Costs', 'Havi fix költségek'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        Money(monthlyFixedMinor, CurrencyCode.huf).format(
-                          locale: localeStr,
-                          hideAmounts: hideAmounts,
-                        ),
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.t('Yearly Projection', 'Éves összesített'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        Money(yearlyFixedMinor, CurrencyCode.huf).format(
-                          locale: localeStr,
-                          hideAmounts: hideAmounts,
-                        ),
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                l10n.t('Upcoming Bills & Rules', 'Esedékes számlák és szabályok'),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              FilledButton.tonalIcon(
-                onPressed: rules.isEmpty
-                    ? null
-                    : () {
-                        for (final r in rules) {
-                          _generateFromRule(db, fx, r, meId, partnerId);
-                        }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              l10n.t(
-                                'Generated due transactions (idempotent UUIDv5).',
-                                'Esedékes tranzakciók létrehozva (duplikációmentes).',
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                icon: const Icon(Icons.play_arrow_outlined),
-                label: Text(l10n.t('Generate due now', 'Generálás most')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+        appBar: AppBar(
+            leading: IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () => AppShell.openDrawer(context),
+                tooltip: l.t('Menu', 'Menü')),
+            title: Text(l.recurring),
+            actions: [
+              IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: l.t('Add rule', 'Szabály hozzáadása'),
+                  onPressed: () => _showAddRuleDialog(context, db, me))
+            ]),
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          Text(l.t(
+              'Records due bills locally when requested. Future and paused rules stay unchanged.',
+              'Kérésre helyben rögzíti az esedékes számlákat. A jövőbeli és szünetelő szabályok nem változnak.')),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+              icon: const Icon(Icons.play_arrow),
+              label:
+                  Text(l.t('Record due bills', 'Esedékes számlák rögzítése')),
+              onPressed: rules.isEmpty
+                  ? null
+                  : () {
+                      var count = 0;
+                      for (final r in rules) {
+                        count += _recordDue(db, fx, r, me, partner);
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(l.t('$count bills recorded.',
+                              '$count számla rögzítve.'))));
+                    }),
           if (rules.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  l10n.t(
-                    'No recurring rules yet.',
-                    'Még nincs ismétlődő szabály.',
-                  ),
-                ),
-              ),
-            ),
-          for (final r in rules)
-            Card(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                leading: Icon(
-                  r.isSubscription
-                      ? Icons.subscriptions_outlined
-                      : Icons.autorenew_outlined,
-                ),
-                title: Text(
-                  '${r.title} (${r.visibility == VisibilityLevel.shared ? "👥" : "🔒"})',
-                ),
-                subtitle: Text(
-                  '${r.frequency} • ${l10n.t("Next due:", "Következő:")} '
-                  '${r.nextDueOn.toIso8601String().split("T").first}',
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      Money(r.amountMinor, r.currency).format(
-                        locale: localeStr,
-                        hideAmounts: hideAmounts,
-                      ),
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: l10n.t('Generate due now', 'Generálás most'),
-                      icon: const Icon(Icons.playlist_add_check),
-                      onPressed: () =>
-                          _generateFromRule(db, fx, r, meId, partnerId),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+            DuoCard(
+                child: TextButton(
+                    onPressed: () => _showAddRuleDialog(context, db, me),
+                    child: Text(l.t('Add your first recurring bill',
+                        'Első ismétlődő számla hozzáadása')))),
+          for (final rule in rules)
+            DuoCard(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(rule.title,
+                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(Money(rule.amountMinor, rule.currency).format(
+                      locale: l.locale.languageCode, hideAmounts: hidden)),
+                  Text(
+                      '${_frequency(l, rule.frequency)} • ${DateFormat.yMMMd(l.locale.languageCode).format(rule.nextDueOn)} • ${rule.autoCreate ? l.t("Active", "Aktív") : l.t("Paused", "Szünetel")}'),
+                  Wrap(spacing: 8, children: [
+                    TextButton(
+                        onPressed: () =>
+                            _showAddRuleDialog(context, db, me, existing: rule),
+                        child: Text(l.t('Edit', 'Szerkesztés'))),
+                    TextButton(
+                        onPressed: () =>
+                            db.upsertRecurringRule(RecurringRule.fromJson({
+                              ...rule.toJson(),
+                              'auto_create': !rule.autoCreate,
+                              'updated_at': DateTime.now().toIso8601String()
+                            })),
+                        child: Text(rule.autoCreate
+                            ? l.t('Pause', 'Szüneteltetés')
+                            : l.t('Resume', 'Folytatás'))),
+                    TextButton(
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                      title: Text(l.t('Remove rule?',
+                                          'Szabály eltávolítása?')),
+                                      content: Text(rule.title),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child:
+                                                Text(l.t('Cancel', 'Mégse'))),
+                                        FilledButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            child: Text(
+                                                l.t('Remove', 'Eltávolítás')))
+                                      ]));
+                          if (confirmed == true) {
+                            db.upsertRecurringRule(RecurringRule.fromJson({
+                              ...rule.toJson(),
+                              'deleted_at': DateTime.now().toIso8601String(),
+                              'updated_at': DateTime.now().toIso8601String()
+                            }));
+                          }
+                        },
+                        child: Text(l.t('Remove', 'Eltávolítás'))),
+                  ]),
+                ])),
+        ]));
   }
 }

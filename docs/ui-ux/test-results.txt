@@ -1,0 +1,52 @@
+00:00 +0: loading <workspace>/app/test/shared_ui_test.dart
+00:00 +0: <workspace>/app/test/sync_and_privacy_test.dart: SyncEngine & Privacy Invariants Offline transaction creation queues outbox entries and pushOutbox() clears them idempotently
+00:00 +1: <workspace>/app/test/sync_and_privacy_test.dart: SyncEngine & Privacy Invariants Offline transaction creation queues outbox entries and pushOutbox() clears them idempotently
+00:00 +2: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +3: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +4: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +5: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +6: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +7: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +8: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +9: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +10: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +11: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +12: <workspace>/app/test/shared_ui_test.dart: functional tokens and solid badges have readable contrast Brightness.light
+00:00 +13: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +14: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +15: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +16: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +17: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +18: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +19: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +20: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +21: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +22: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +23: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +24: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +25: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +26: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +27: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +28: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +29: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +30: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +31: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:00 +32: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:01 +33: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:02 +34: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:02 +35: <workspace>/app/test/widget_test.dart: DuoWalletApp navigates across Dashboard, Transactions (3 views), Settle Up, and switches EN <-> HU
+00:02 +36: <workspace>/app/test/ux_edge_states_test.dart: empty local data fit all 16 routes at HU320/1.5
+00:03 +37: <workspace>/app/test/ux_edge_states_test.dart: empty local data fit all 16 routes at HU320/1.5
+00:03 +38: <workspace>/app/test/ux_edge_states_test.dart: empty local data fit all 16 routes at HU320/1.5
+00:03 +39: <workspace>/app/test/ux_edge_states_test.dart: empty local data fit all 16 routes at HU320/1.5
+00:04 +40: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 360.0x800.0 en text 1.0
+00:06 +41: <workspace>/app/test/shared_ui_test.dart: every primary tab can open menu and reach goals budgets settings
+00:06 +42: <workspace>/app/test/ux_edge_states_test.dart: long names and extreme signed amounts fit all 16 routes at HU320/1.5
+00:06 +43: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 320.0x640.0 hu text 1.0
+00:07 +44: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 320.0x640.0 hu text 1.0
+00:08 +45: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 320.0x640.0 hu text 1.5
+00:09 +46: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 360.0x800.0 en text 2.0
+00:10 +47: <workspace>/app/test/ux_review_probe_test.dart: all routes fit 320.0x568.0 hu text 2.0
+00:11 +48: <workspace>/app/test/ux_review_probe_test.dart: transaction sheet fits with keyboard and large Hungarian text
+00:11 +49: <workspace>/app/test/ux_review_probe_test.dart: transfer sheet fits with keyboard and large Hungarian text
+00:11 +50: All tests passed!

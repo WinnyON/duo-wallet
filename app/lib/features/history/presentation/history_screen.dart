@@ -1,255 +1,211 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/domain/views.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/money.dart';
+import '../../../router.dart';
+import '../../transactions/presentation/transactions_screen.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
-
   @override
   ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
-  final _searchCtrl = TextEditingController();
-  late int _year;
-  late int _month;
+  final _search = TextEditingController();
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   ExpenseView _view = ExpenseView.together;
-  String? _selectedCategoryId;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _year = now.year;
-    _month = now.month;
-  }
-
+  String? _category;
   @override
   void dispose() {
-    _searchCtrl.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  void _stepMonth(int delta) {
-    setState(() {
-      final next = DateTime(_year, _month + delta, 1);
-      _year = next.year;
-      _month = next.month;
-    });
+  void _reset() => setState(() {
+        _search.clear();
+        _category = null;
+      });
+
+  Future<void> _pickMonth() async {
+    final picked = await showDatePicker(
+        context: context,
+        initialDate: _month,
+        firstDate: DateTime(1970),
+        lastDate: DateTime(2100, 12, 31));
+    if (picked != null && mounted) {
+      setState(() => _month = DateTime(picked.year, picked.month));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(dbTickProvider);
-    final l10n = AppLocalizations.of(context);
     final db = ref.watch(appDatabaseProvider);
-    final meId = ref.watch(currentUserIdProvider);
+    final me = ref.watch(currentUserIdProvider);
     final locale = ref.watch(appLocaleProvider);
-    final hideAmounts = ref.watch(hideAmountsProvider);
-
-    final query = _searchCtrl.text.trim().toLowerCase();
-
-    final filtered = db.transactions.where((t) {
-      if (t.occurredOn.year != _year || t.occurredOn.month != _month) {
-        return false;
-      }
-      if (!isIncludedInView(t, _view, meId)) return false;
-      if (_selectedCategoryId != null && t.categoryId != _selectedCategoryId) {
-        return false;
-      }
-      if (query.isNotEmpty) {
-        final m = (t.merchant ?? '').toLowerCase();
-        final n = (t.note ?? '').toLowerCase();
-        final tags = t.tags.map((e) => e.toLowerCase()).join(' ');
-        if (!m.contains(query) && !n.contains(query) && !tags.contains(query)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-
-    final monthlyTotalMinor = filtered.fold<int>(
-      0,
-      (sum, t) => sum + amountFor(t, _view, meId),
-    );
-
+    final hidden = ref.watch(hideAmountsProvider);
+    final l = AppLocalizations.of(context);
+    final query = _search.text.trim().toLowerCase();
+    final rows = db.transactions
+        .where((t) =>
+            t.occurredOn.year == _month.year &&
+            t.occurredOn.month == _month.month &&
+            isIncludedInView(t, _view, me) &&
+            (_category == null || t.categoryId == _category) &&
+            (query.isEmpty ||
+                [t.merchant ?? '', t.note ?? '', ...t.tags]
+                    .join(' ')
+                    .toLowerCase()
+                    .contains(query)))
+        .toList();
+    final total = rows.fold<int>(0, (s, t) => s + amountFor(t, _view, me));
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.history),
-      ),
-      body: Column(
-        children: [
-          // Year / Month selector
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
+          leading: IconButton(
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => AppShell.goBackOrHome(context)),
+          title: Text(l.history)),
+      body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            Text(
+                l.t('Monthly expense report · HUF',
+                    'Havi kiadáskimutatás · HUF'),
+                style: Theme.of(context).textTheme.bodySmall),
+            Row(children: [
+              IconButton(
+                  tooltip: l.t('Previous month', 'Előző hónap'),
                   icon: const Icon(Icons.chevron_left),
-                  onPressed: () => _stepMonth(-1),
-                ),
-                Text(
-                  '$_year-${_month.toString().padLeft(2, '0')}',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                IconButton(
+                  onPressed: () => setState(
+                      () => _month = DateTime(_month.year, _month.month - 1))),
+              Expanded(
+                  child: TextButton(
+                      onPressed: _pickMonth,
+                      child: Text(DateFormat.yMMMM(locale).format(_month),
+                          textAlign: TextAlign.center))),
+              IconButton(
+                  tooltip: l.t('Next month', 'Következő hónap'),
                   icon: const Icon(Icons.chevron_right),
-                  onPressed: () => _stepMonth(1),
-                ),
-              ],
-            ),
-          ),
-          // ExpenseView filter
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: SegmentedButton<ExpenseView>(
-              segments: [
-                ButtonSegment(
-                  value: ExpenseView.together,
-                  label: Text(l10n.viewTogether),
-                ),
-                ButtonSegment(
-                  value: ExpenseView.individual,
-                  label: Text(l10n.viewIndividual),
-                ),
-                ButtonSegment(
-                  value: ExpenseView.myTotal,
-                  label: Text(l10n.viewMyTotal),
-                ),
-              ],
-              selected: {_view},
-              onSelectionChanged: (s) => setState(() => _view = s.first),
-            ),
-          ),
-          // Search + Category filter
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.search),
-                      hintText: l10n.t(
-                        'Search merchant, note, tag...',
-                        'Keresés (kereskedő, megjegyzés, címke)...',
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: DropdownButtonFormField<String?>(
-                    initialValue: _selectedCategoryId,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      labelText: l10n.t('Category', 'Kategória'),
-                      border: const OutlineInputBorder(),
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text(l10n.t('All', 'Mind')),
-                      ),
-                      ...db.categories.map(
-                        (c) => DropdownMenuItem<String?>(
-                          value: c.id,
-                          child: Text(
-                            c.localizedName(locale),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) => setState(() => _selectedCategoryId = v),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Monthly summary total card
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Card(
-              child: ListTile(
-                title: Text(
-                  l10n.t(
-                    'Filtered Total (${filtered.length} items)',
-                    'Szűrt összesen (${filtered.length} tétel)',
-                  ),
-                ),
-                trailing: Text(
-                  Money(monthlyTotalMinor).format(
-                    locale: locale,
-                    hideAmounts: hideAmounts,
-                  ),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: filtered.isEmpty
-                ? Center(
-                    child: Text(
-                      l10n.t(
-                        'No matching transactions.',
-                        'Nincs találat a megadott szűrőkre.',
-                      ),
-                    ),
-                  )
-                : ListView.separated(
+                  onPressed: () => setState(
+                      () => _month = DateTime(_month.year, _month.month + 1))),
+            ]),
+            Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                    onPressed: () => setState(() => _month =
+                        DateTime(DateTime.now().year, DateTime.now().month)),
+                    icon: const Icon(Icons.today),
+                    label: Text(l.t('This month', 'Ez a hónap')))),
+            Wrap(spacing: 8, runSpacing: 4, children: [
+              for (final view in ExpenseView.values)
+                ChoiceChip(
+                    label: Text(switch (view) {
+                      ExpenseView.together => l.viewTogether,
+                      ExpenseView.individual => l.viewIndividual,
+                      ExpenseView.myTotal => l.viewMyTotal
+                    }),
+                    selected: _view == view,
+                    onSelected: (_) => setState(() => _view = view))
+            ]),
+            const SizedBox(height: 12),
+            TextField(
+                controller: _search,
+                decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    labelText: l.t('Merchant, note or tag',
+                        'Kereskedő, megjegyzés vagy címke'),
+                    suffixIcon: query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: l.t('Clear search', 'Keresés törlése'),
+                            onPressed: () => setState(_search.clear),
+                            icon: const Icon(Icons.close))),
+                onChanged: (_) => setState(() {})),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+                key: ValueKey(_category),
+                initialValue: _category,
+                isExpanded: true,
+                decoration:
+                    InputDecoration(labelText: l.t('Category', 'Kategória')),
+                items: [
+                  DropdownMenuItem(
+                      value: null,
+                      child: Text(l.t('All categories', 'Minden kategória'))),
+                  for (final c in db.categories)
+                    DropdownMenuItem(
+                        value: c.id,
+                        child: Text(c.localizedName(locale),
+                            overflow: TextOverflow.ellipsis))
+                ],
+                onChanged: (v) => setState(() => _category = v)),
+            const SizedBox(height: 12),
+            Card(
+                child: Padding(
                     padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final t = filtered[index];
-                      final cat = t.categoryId != null
-                          ? db.findCategory(t.categoryId!)
-                          : null;
-                      final amtMinor = amountFor(t, _view, meId);
-                      final dateStr =
-                          t.occurredOn.toIso8601String().split('T').first;
-                      return ListTile(
-                        title: Text(
-                          t.merchant ?? cat?.localizedName(locale) ?? l10n.expense,
-                        ),
-                        subtitle: Text(
-                          [
-                            dateStr,
-                            if (cat != null) cat.localizedName(locale),
-                            if (t.note != null && t.note!.isNotEmpty) t.note!,
-                            if (t.tags.isNotEmpty)
-                              t.tags.map((e) => '#$e').join(' '),
-                          ].join(' • '),
-                        ),
-                        trailing: Text(
-                          Money(amtMinor).format(
-                            locale: locale,
-                            hideAmounts: hideAmounts,
-                          ),
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l.t('Filtered total · ${rows.length} entries',
+                              'Szűrt összesen · ${rows.length} tétel')),
+                          Text(
+                              Money(total)
+                                  .format(locale: locale, hideAmounts: hidden),
+                              style: Theme.of(context).textTheme.titleLarge),
+                        ]))),
+            if (rows.isEmpty)
+              Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(children: [
+                    Text(l.t('No expenses match this month and these filters.',
+                        'Nincs a hónapnak és a szűrőknek megfelelő kiadás.')),
+                    TextButton(
+                        onPressed: _reset,
+                        child: Text(l.t('Clear filters', 'Szűrők törlése'))),
+                  ])),
+            for (final t in rows)
+              Card(
+                  child: InkWell(
+                      onTap: () => showTransactionDetails(context, t),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  t.merchant ??
+                                      db
+                                          .findCategory(t.categoryId ?? '')
+                                          ?.localizedName(locale) ??
+                                      l.expense,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                  DateFormat.yMMMd(locale).format(t.occurredOn),
+                                  style: Theme.of(context).textTheme.bodySmall),
+                              if (t.note?.isNotEmpty ?? false)
+                                Text(t.note!,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 8),
+                              Text(
+                                  Money(amountFor(t, _view, me)).format(
+                                      locale: locale, hideAmounts: hidden),
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
+                            ]),
+                      ))),
+          ]),
     );
   }
 }

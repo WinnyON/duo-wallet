@@ -10,35 +10,56 @@ class Money {
 
   const Money.zero([this.currency = CurrencyCode.huf]) : amountMinor = 0;
 
-  factory Money.fromMajor(num major, [CurrencyCode currency = CurrencyCode.huf]) =>
+  factory Money.fromMajor(num major,
+          [CurrencyCode currency = CurrencyCode.huf]) =>
       Money((major * currency.minorFactor).round(), currency);
 
   double get majorAmount => amountMinor / currency.minorFactor;
 
   Money operator +(Money other) {
-    assert(currency == other.currency, 'Cannot add different currencies directly');
+    assert(
+        currency == other.currency, 'Cannot add different currencies directly');
     return Money(amountMinor + other.amountMinor, currency);
   }
 
   Money operator -(Money other) {
-    assert(currency == other.currency, 'Cannot subtract different currencies directly');
+    assert(currency == other.currency,
+        'Cannot subtract different currencies directly');
     return Money(amountMinor - other.amountMinor, currency);
+  }
+
+  String formatNumber({String locale = 'hu', bool compact = false}) {
+    if (compact && majorAmount.abs() >= 100000) {
+      return NumberFormat.compact(locale: locale).format(majorAmount);
+    }
+    final decimals = currency.displayDecimals;
+    return NumberFormat.decimalPatternDigits(
+            locale: locale, decimalDigits: decimals)
+        .format(decimals == 0 ? majorAmount.round() : majorAmount);
   }
 
   String format({String locale = 'hu', bool hideAmounts = false}) {
     if (hideAmounts) return '•••• ${currency.symbol}';
-    final decimals = currency.displayDecimals;
-    final value = decimals == 0 ? (amountMinor / 100).round() : majorAmount;
-    final pattern = decimals == 0 ? '#,##0' : '#,##0.00';
-    final formatted = NumberFormat(pattern, locale).format(value).replaceAll(',', ' ').replaceAll('\u00A0', ' ');
-    return locale.startsWith('hu') || currency == CurrencyCode.huf || currency == CurrencyCode.ron
-        ? '$formatted ${currency.symbol}'
-        : '${currency.symbol}$formatted';
+    return _withCurrency(formatNumber(locale: locale), locale);
   }
+
+  String _withCurrency(String number, String locale) =>
+      locale.startsWith('hu') ||
+              currency == CurrencyCode.huf ||
+              currency == CurrencyCode.ron
+          ? '$number ${currency.symbol}'
+          : '${currency.symbol}$number';
+
+  String formatCompact({String locale = 'hu', bool hideAmounts = false}) =>
+      hideAmounts
+          ? '•••• ${currency.symbol}'
+          : _withCurrency(formatNumber(locale: locale, compact: true), locale);
 
   @override
   bool operator ==(Object other) =>
-      other is Money && other.amountMinor == amountMinor && other.currency == currency;
+      other is Money &&
+      other.amountMinor == amountMinor &&
+      other.currency == currency;
 
   @override
   int get hashCode => Object.hash(amountMinor, currency);

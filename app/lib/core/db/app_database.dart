@@ -28,7 +28,9 @@ class AppDatabase {
   final List<OutboxEntry> _outbox = [];
   DateTime? lastPulledAt;
 
-  AppDatabase({bool seedDemo = true}) {
+  final bool serverManagedActivity;
+
+  AppDatabase({bool seedDemo = true, this.serverManagedActivity = false}) {
     if (seedDemo) _seedDefaultData();
   }
 
@@ -40,7 +42,8 @@ class AppDatabase {
     }
   }
 
-  void _enqueueOutbox(String table, String id, String op, Map<String, dynamic> payload) {
+  void _enqueueOutbox(
+      String table, String id, String op, Map<String, dynamic> payload) {
     _outbox.removeWhere((e) => e.tableName == table && e.recordId == id);
     _outbox.add(
       OutboxEntry(
@@ -69,6 +72,9 @@ class AppDatabase {
         ..sort((a, b) => b.occurredOn.compareTo(a.occurredOn));
   List<Category> get categories =>
       _categories.values.where((c) => c.deletedAt == null).toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  List<Category> get retiredCategories =>
+      _categories.values.where((c) => c.deletedAt != null).toList()
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   List<Budget> get budgets =>
       _budgets.values.where((b) => b.deletedAt == null).toList();
@@ -168,7 +174,9 @@ class AppDatabase {
 
   void upsertRecurringRule(RecurringRule r, {bool fromSync = false}) {
     _recurringRules[r.id] = r;
-    if (!fromSync) _enqueueOutbox('recurring_rules', r.id, 'upsert', r.toJson());
+    if (!fromSync) {
+      _enqueueOutbox('recurring_rules', r.id, 'upsert', r.toJson());
+    }
     _notify();
   }
 
@@ -203,8 +211,11 @@ class AppDatabase {
   }
 
   void addActivity(ActivityEvent event, {bool fromSync = false}) {
+    if (serverManagedActivity && !fromSync) return;
     _activities[event.id] = event;
-    if (!fromSync) _enqueueOutbox('activity', event.id, 'upsert', event.toJson());
+    if (!fromSync) {
+      _enqueueOutbox('activity', event.id, 'upsert', event.toJson());
+    }
     _notify();
   }
 
@@ -215,11 +226,11 @@ class AppDatabase {
   Txn saveTransaction(Txn draft, {bool fromSync = false}) {
     final effectiveScope = draft.paidFromCommon ? Scope.together : draft.scope;
     final effectiveVisibility = switch (draft.kind) {
-      TxnKind.expense =>
-        effectiveScope == Scope.together
-            ? VisibilityLevel.shared
-            : VisibilityLevel.private,
-      TxnKind.income || TxnKind.transfer =>
+      TxnKind.expense => effectiveScope == Scope.together
+          ? VisibilityLevel.shared
+          : VisibilityLevel.private,
+      TxnKind.income ||
+      TxnKind.transfer =>
         (draft.paidFromCommon || draft.isContribution)
             ? VisibilityLevel.shared
             : VisibilityLevel.private,
@@ -282,44 +293,321 @@ class AppDatabase {
     _notify();
   }
 
-  Map<String, dynamic> exportVisibleJson() => {
-    'exported_at': DateTime.now().toIso8601String(),
-    'household': _household?.toJson(),
-    'profiles': profiles.map((e) => e.toJson()).toList(),
-    'accounts': accounts.map((e) => e.toJson()).toList(),
-    'categories': categories.map((e) => e.toJson()).toList(),
-    'transactions': transactions.map((e) => e.toJson()).toList(),
-    'budgets': budgets.map((e) => e.toJson()).toList(),
-    'settlements': settlements.map((e) => e.toJson()).toList(),
-    'recurring_rules': recurringRules.map((e) => e.toJson()).toList(),
-    'goals': goals.map((e) => e.toJson()).toList(),
-  };
+  Map<String, dynamic> exportVisibleJson({String? meId}) {
+    final visibleAccounts = accounts
+        .where((a) => meId == null || a.isCommon || a.ownerId == meId)
+        .toList();
+    final accountIds = visibleAccounts.map((a) => a.id).toSet();
+    return {
+      'schema_version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      'household': _household?.toJson(),
+      'profiles': profiles.map((e) => e.toJson()).toList(),
+      'accounts': visibleAccounts.map((e) => e.toJson()).toList(),
+      'categories': _categories.values.map((e) => e.toJson()).toList(),
+      'transactions': transactions
+          .where((e) =>
+              meId == null ||
+              e.visibility == VisibilityLevel.shared ||
+              e.createdBy == meId)
+          .map((e) => e.toJson())
+          .toList(),
+      'budgets': budgets
+          .where((e) =>
+              meId == null || e.scope == Scope.together || e.ownerId == meId)
+          .map((e) => e.toJson())
+          .toList(),
+      'settlements': settlements.map((e) => e.toJson()).toList(),
+      'settlement_postings': settlementPostings
+          .where((e) => meId == null || e.userId == meId)
+          .map((e) => e.toJson())
+          .toList(),
+      'recurring_rules': recurringRules
+          .where((e) =>
+              meId == null ||
+              e.visibility == VisibilityLevel.shared ||
+              e.createdBy == meId)
+          .map((e) => e.toJson())
+          .toList(),
+      'goals': goals
+          .where((e) => meId == null || e.isShared || e.ownerId == meId)
+          .map((e) => e.toJson())
+          .toList(),
+      'valuations': valuations
+          .where((e) => accountIds.contains(e.accountId))
+          .map((e) => e.toJson())
+          .toList(),
+      'activities': activities.map((e) => e.toJson()).toList(),
+    };
+  }
 
-  void restoreFromJson(Map<String, dynamic> data) {
-    if (data['household'] is Map<String, dynamic>) {
-      _household = Household.fromJson(data['household'] as Map<String, dynamic>);
+  /// Validates the whole backup before merging by ID. No live data changes on failure.
+  void restoreFromJson(Map<String, dynamic> data,
+      {String? meId, bool validateOnly = false, bool queueWrites = false}) {
+    if (queueWrites && meId == null) {
+      throw const FormatException('Authenticated owner required');
     }
-    for (final raw in (data['accounts'] as List? ?? const [])) {
-      final a = Account.fromJson(Map<String, dynamic>.from(raw as Map));
-      _accounts[a.id] = a;
+    if ((data['schema_version'] != null && data['schema_version'] != 1) ||
+        data['accounts'] is! List ||
+        data['transactions'] is! List) {
+      throw const FormatException('Unsupported backup');
     }
-    for (final raw in (data['categories'] as List? ?? const [])) {
-      final c = Category.fromJson(Map<String, dynamic>.from(raw as Map));
-      _categories[c.id] = c;
+    List<T> rows<T>(String key, T Function(Map<String, dynamic>) parse) {
+      final value = data[key];
+      if (value == null) return [];
+      if (value is! List) throw const FormatException('Invalid table');
+      return value.map((raw) {
+        if (raw is! Map) throw const FormatException('Invalid row');
+        final row = Map<String, dynamic>.from(raw);
+        if (key != 'settlement_postings' &&
+            (row['id'] is! String || (row['id'] as String).isEmpty)) {
+          throw const FormatException('Missing ID');
+        }
+        for (final entry in row.entries) {
+          if ((entry.key.endsWith('_at') || entry.key.endsWith('_on')) &&
+              entry.value != null &&
+              (entry.value is! String ||
+                  DateTime.tryParse(entry.value as String) == null)) {
+            throw const FormatException('Invalid date');
+          }
+          if (entry.key.endsWith('_minor') &&
+              entry.value != null &&
+              (entry.value is! num ||
+                  !(entry.value as num).isFinite ||
+                  (entry.value as num).abs() > 9007199254740991 ||
+                  entry.value != (entry.value as num).round())) {
+            throw const FormatException('Invalid amount');
+          }
+        }
+        return parse(row);
+      }).toList();
     }
-    for (final raw in (data['transactions'] as List? ?? const [])) {
-      final t = Txn.fromJson(Map<String, dynamic>.from(raw as Map));
-      _transactions[t.id] = t;
+
+    final household = data['household'] == null
+        ? _household
+        : Household.fromJson(
+            Map<String, dynamic>.from(data['household'] as Map));
+    if (_household != null && household?.id != _household!.id) {
+      throw const FormatException('Different household');
     }
-    for (final raw in (data['budgets'] as List? ?? const [])) {
-      final b = Budget.fromJson(Map<String, dynamic>.from(raw as Map));
-      _budgets[b.id] = b;
+    final importedProfiles = rows('profiles', Profile.fromJson);
+    final importedAccounts = rows('accounts', Account.fromJson);
+    final importedCategories = rows('categories', Category.fromJson);
+    final importedTransactions = rows('transactions', Txn.fromJson);
+    final importedBudgets = rows('budgets', Budget.fromJson);
+    final importedGoals = rows('goals', Goal.fromJson);
+    final importedSettlements = rows('settlements', Settlement.fromJson);
+    final importedRules = rows('recurring_rules', RecurringRule.fromJson);
+    final importedPostings =
+        rows('settlement_postings', SettlementPosting.fromJson);
+    final importedValuations = rows('valuations', AccountValuation.fromJson);
+    final importedActivities = rows('activities', ActivityEvent.fromJson);
+    final householdIds = [
+      ...importedProfiles.map((e) => e.householdId),
+      ...importedAccounts.map((e) => e.householdId),
+      ...importedCategories.map((e) => e.householdId),
+      ...importedTransactions.map((e) => e.householdId),
+      ...importedBudgets.map((e) => e.householdId),
+      ...importedGoals.map((e) => e.householdId),
+      ...importedSettlements.map((e) => e.householdId),
+      ...importedRules.map((e) => e.householdId),
+      ...importedActivities.map((e) => e.householdId),
+    ];
+    if (householdIds.any((id) => id != household?.id) ||
+        (meId != null &&
+            (importedAccounts.any((e) => !e.isCommon && e.ownerId != meId) ||
+                importedTransactions.any((e) =>
+                    e.visibility == VisibilityLevel.private &&
+                    e.createdBy != meId) ||
+                importedBudgets.any(
+                    (e) => e.scope != Scope.together && e.ownerId != meId) ||
+                importedGoals.any((e) => !e.isShared && e.ownerId != meId) ||
+                importedRules.any((e) =>
+                    e.visibility == VisibilityLevel.private &&
+                    e.createdBy != meId) ||
+                importedPostings.any((e) => e.userId != meId)))) {
+      throw const FormatException('Backup contains inaccessible records');
     }
-    for (final raw in (data['goals'] as List? ?? const [])) {
-      final g = Goal.fromJson(Map<String, dynamic>.from(raw as Map));
-      _goals[g.id] = g;
+    final accessibleAccountIds = {
+      ...accounts
+          .where((e) => meId == null || e.isCommon || e.ownerId == meId)
+          .map((e) => e.id),
+      ...importedAccounts.map((e) => e.id),
+    };
+    if (importedValuations
+        .any((e) => !accessibleAccountIds.contains(e.accountId))) {
+      throw const FormatException('Inaccessible valuation');
+    }
+    if (validateOnly) return;
+    _household = household;
+    for (final e in importedProfiles) {
+      _profiles[e.id] = e;
+    }
+    for (final e in importedAccounts) {
+      _accounts[e.id] = e;
+    }
+    for (final e in importedCategories) {
+      _categories[e.id] = e;
+    }
+    for (final e in importedTransactions) {
+      _transactions[e.id] = e;
+    }
+    for (final e in importedBudgets) {
+      _budgets[e.id] = e;
+    }
+    for (final e in importedGoals) {
+      _goals[e.id] = e;
+    }
+    for (final e in importedSettlements) {
+      _settlements[e.id] = e;
+    }
+    for (final e in importedRules) {
+      _recurringRules[e.id] = e;
+    }
+    for (final e in importedPostings) {
+      _settlementPostings['${e.settlementId}_${e.userId}'] = e;
+    }
+    for (final e in importedValuations) {
+      _valuations[e.id] = e;
+    }
+    for (final e in importedActivities) {
+      _activities[e.id] = e;
+    }
+    if (queueWrites) {
+      if (meId == null) {
+        throw const FormatException('Authenticated owner required');
+      }
+      for (final e in importedProfiles.where((e) => e.id == meId)) {
+        _enqueueOutbox('profiles', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedAccounts) {
+        _enqueueOutbox('accounts', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedCategories) {
+        _enqueueOutbox('categories', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedTransactions) {
+        _enqueueOutbox('transactions', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedBudgets) {
+        _enqueueOutbox('budgets', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedGoals) {
+        _enqueueOutbox('goals', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedSettlements) {
+        _enqueueOutbox('settlements', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedRules) {
+        _enqueueOutbox('recurring_rules', e.id, 'upsert', e.toJson());
+      }
+      for (final e in importedPostings) {
+        _enqueueOutbox('settlement_postings', '${e.settlementId}_${e.userId}',
+            'upsert', e.toJson());
+      }
+      for (final e in importedValuations) {
+        _enqueueOutbox('account_valuations', e.id, 'upsert', e.toJson());
+      }
     }
     _notify();
+  }
+
+  /// Includes tombstones and unacknowledged writes so a restart cannot resurrect
+  /// deleted records or silently lose pending changes.
+  Map<String, dynamic> exportLocalState() => {
+        'data': {
+          ...exportVisibleJson(),
+          'accounts': _accounts.values.map((e) => e.toJson()).toList(),
+          'transactions': _transactions.values.map((e) => e.toJson()).toList(),
+          'budgets': _budgets.values.map((e) => e.toJson()).toList(),
+          'goals': _goals.values.map((e) => e.toJson()).toList(),
+          'recurring_rules':
+              _recurringRules.values.map((e) => e.toJson()).toList(),
+          'settlements': _settlements.values.map((e) => e.toJson()).toList(),
+        },
+        'outbox': _outbox
+            .map((e) => {
+                  'id': e.id,
+                  'table': e.tableName,
+                  'record_id': e.recordId,
+                  'operation': e.operation,
+                  'payload': e.payload,
+                  'created_at': e.createdAt.toIso8601String()
+                })
+            .toList(),
+        'last_pulled_at': lastPulledAt?.toIso8601String(),
+      };
+
+  void restoreLocalState(Map<String, dynamic> state, {required String meId}) {
+    final entries = (state['outbox'] as List? ?? [])
+        .map((e) => OutboxEntry(
+            id: e['id'] as String,
+            tableName: e['table'] as String,
+            recordId: e['record_id'] as String,
+            operation: e['operation'] as String,
+            payload: Map<String, dynamic>.from(e['payload'] as Map),
+            createdAt: DateTime.parse(e['created_at'] as String)))
+        .toList();
+    restoreFromJson(Map<String, dynamic>.from(state['data'] as Map),
+        meId: meId);
+    _outbox.addAll(entries);
+    lastPulledAt = DateTime.tryParse(state['last_pulled_at'] as String? ?? '');
+  }
+
+  void clear() {
+    _household = null;
+    _profiles.clear();
+    _accounts.clear();
+    _transactions.clear();
+    _categories.clear();
+    _budgets.clear();
+    _settlements.clear();
+    _settlementPostings.clear();
+    _recurringRules.clear();
+    _valuations.clear();
+    _goals.clear();
+    _activities.clear();
+    _outbox.clear();
+    lastPulledAt = null;
+    _notify();
+  }
+
+  void replaceRemoteSnapshot(Map<String, dynamic> data) {
+    final merged = Map<String, dynamic>.from(data);
+    const keys = {
+      'households': 'household',
+      'profiles': 'profiles',
+      'accounts': 'accounts',
+      'transactions': 'transactions',
+      'categories': 'categories',
+      'budgets': 'budgets',
+      'settlements': 'settlements',
+      'settlement_postings': 'settlement_postings',
+      'recurring_rules': 'recurring_rules',
+      'account_valuations': 'valuations',
+      'goals': 'goals',
+      'activity': 'activities'
+    };
+    final pending = [..._outbox];
+    for (final entry in pending) {
+      final key = keys[entry.tableName];
+      if (key == null) throw StateError('Unsupported pending table');
+      if (key == 'household') {
+        merged[key] = entry.payload;
+        continue;
+      }
+      final rows = [...(merged[key] as List? ?? [])];
+      rows.removeWhere((e) => key == 'settlement_postings'
+          ? e['settlement_id'] == entry.payload['settlement_id'] &&
+              e['user_id'] == entry.payload['user_id']
+          : e['id'] == entry.payload['id']);
+      rows.add(entry.payload);
+      merged[key] = rows;
+    }
+    restoreFromJson(merged, validateOnly: true);
+    clear();
+    restoreFromJson(merged);
+    _outbox.addAll(pending);
   }
 
   void _seedDefaultData() {
@@ -342,8 +630,9 @@ class AppDatabase {
       id: samId,
       householdId: hhId,
       displayName: 'Sam',
-      color: '#4F46E5',
+      color: '#013328',
       locale: 'en',
+      avatarType: 'man',
       monthlyCommonContributionMinor: 15000000, // 150 000 Ft
       updatedAt: now,
     );
@@ -351,8 +640,9 @@ class AppDatabase {
       id: annaId,
       householdId: hhId,
       displayName: 'Anna',
-      color: '#EC4899',
+      color: '#CC8B65',
       locale: 'hu',
+      avatarType: 'woman',
       monthlyCommonContributionMinor: 15000000, // 150 000 Ft
       updatedAt: now,
     );
@@ -410,13 +700,76 @@ class AppDatabase {
     );
 
     final defaultCats = [
-      ('cat-groceries', 'Groceries', 'Élelmiszer', 'expense', 'shopping_cart', '#10B981', true, 1),
-      ('cat-housing', 'Housing & Utilities', 'Lakhatás és rezsi', 'expense', 'home', '#3B82F6', true, 2),
-      ('cat-dining', 'Dining & Coffee', 'Étterem és kávé', 'expense', 'restaurant', '#F59E0B', false, 3),
-      ('cat-transport', 'Transport', 'Közlekedés', 'expense', 'directions_car', '#6366F1', true, 4),
-      ('cat-health', 'Health', 'Egészség', 'expense', 'favorite', '#EF4444', true, 5),
-      ('cat-fun', 'Entertainment & Gifts', 'Szórakozás és ajándék', 'expense', 'celebration', '#EC4899', false, 6),
-      ('cat-salary', 'Salary', 'Fizetés', 'income', 'payments', '#14B8A6', false, 7),
+      (
+        'cat-groceries',
+        'Groceries',
+        'Élelmiszer',
+        'expense',
+        'shopping_cart',
+        '#10B981',
+        true,
+        1
+      ),
+      (
+        'cat-housing',
+        'Housing & Utilities',
+        'Lakhatás és rezsi',
+        'expense',
+        'home',
+        '#3B82F6',
+        true,
+        2
+      ),
+      (
+        'cat-dining',
+        'Dining & Coffee',
+        'Étterem és kávé',
+        'expense',
+        'restaurant',
+        '#F59E0B',
+        false,
+        3
+      ),
+      (
+        'cat-transport',
+        'Transport',
+        'Közlekedés',
+        'expense',
+        'directions_car',
+        '#6366F1',
+        true,
+        4
+      ),
+      (
+        'cat-health',
+        'Health',
+        'Egészség',
+        'expense',
+        'favorite',
+        '#EF4444',
+        true,
+        5
+      ),
+      (
+        'cat-fun',
+        'Entertainment & Gifts',
+        'Szórakozás és ajándék',
+        'expense',
+        'celebration',
+        '#EC4899',
+        false,
+        6
+      ),
+      (
+        'cat-salary',
+        'Salary',
+        'Fizetés',
+        'income',
+        'payments',
+        '#14B8A6',
+        false,
+        7
+      ),
     ];
     for (final c in defaultCats) {
       _categories[c.$1] = Category(
@@ -619,7 +972,8 @@ final currentUserIdProvider = StateProvider<String>((ref) => 'user-sam');
 final partnerUserIdProvider = StateProvider<String>((ref) => 'user-anna');
 final appLocaleProvider = StateProvider<String>((ref) => 'en');
 final hideAmountsProvider = StateProvider<bool>((ref) => false);
-final displayCurrencyProvider = StateProvider<CurrencyCode>((ref) => CurrencyCode.huf);
+final displayCurrencyProvider =
+    StateProvider<CurrencyCode>((ref) => CurrencyCode.huf);
 final fxServiceProvider = Provider<FxService>((ref) => FxService());
 
 final dbTickProvider = StreamProvider<int>((ref) async* {

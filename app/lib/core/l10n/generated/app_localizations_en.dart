@@ -1,12 +1,11 @@
-// ignore: unused_import
-import 'package:intl/intl.dart' as intl;
+import 'package:flutter/widgets.dart';
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
 
 /// The translations for English (`en`).
 class AppLocalizationsEn extends AppLocalizations {
-  AppLocalizationsEn([String locale = 'en']) : super(locale);
+  AppLocalizationsEn([String locale = 'en']) : super(Locale(locale));
 
   @override
   String get appName => 'Duo Wallet';
@@ -51,13 +50,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings => 'Settings';
 
   @override
-  String get viewTogether => 'Together';
+  String get viewTogether => 'Shared';
 
   @override
-  String get viewIndividual => 'Individual';
+  String get viewIndividual => 'Personal';
 
   @override
-  String get viewMyTotal => 'My Total';
+  String get viewMyTotal => 'All Mine';
 
   @override
   String get quickAdd => 'Quick Add';

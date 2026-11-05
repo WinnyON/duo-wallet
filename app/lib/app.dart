@@ -3,6 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/db/app_database.dart';
+import 'core/auth/backend_session.dart';
+import 'core/auth/backend_gate.dart';
 import 'core/l10n/generated/app_localizations.dart';
 import 'router.dart';
 import 'theme.dart';
@@ -18,6 +20,12 @@ class DuoWalletApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Duo Wallet',
+      builder: (context, child) => ref.watch(productionModeProvider)
+          ? Navigator(
+              pages: [MaterialPage(child: BackendGate(child: child!))],
+              onDidRemovePage: (_) {},
+            )
+          : child!,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

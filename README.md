@@ -1,100 +1,56 @@
 # Duo Wallet
 
-Offline-first, strictly private Android finance app for two people (English & Hungarian, HUF / EUR / RON), backed by a free-tier Supabase Postgres project and installed via sideloaded APK.
+Android finance app for two people, with English and Hungarian interfaces, shared and private expenses, accounts, budgets, goals, recurring transactions and settlements. Uses Supabase Auth, Postgres row-level security and private backup storage.
 
----
+## First Android release
 
-## Privacy Architecture
+Download the APK from [GitHub Releases](https://github.com/WinnyON/duo-wallet/releases). The first version is a beta for Android 8.0 and newer. Open the downloaded APK and permit installation from your browser or file manager when Android asks. Future APKs must be signed with the same release key to update the installed app.
 
-Every record is classified by an immutable Postgres trigger into either **Private** (`visibility = 'private'`) or **Shared** (`visibility = 'shared'`):
+Create an account with your email and a strong password, verify the email on the same phone, then create a household or join with your partner's invite code. Both partners use separate accounts. Shared expenses sync; personal records stay protected by database access policies. Confirmation and reset emails are configured by the backend operator.
 
-| Record | Visibility | Notes |
-|---|---|---|
-| **Individual** expense | 🔒 Private | Never synced to your partner's phone |
-| **Together** expense | 👥 Shared | Any split (`0%–100%`). If paid from a personal account, partner sees `"Sam's personal account"`, never the account name or balance |
-| Common-account expense | 👥 Shared | Always forced to `scope = 'together'` |
-| Personal account / income / valuation / budget / goal | 🔒 Private | Filtered at Postgres Row Level Security (RLS) |
-| Common account & contributions (`personal -> common`) | 👥 Shared | Shows contributor and amount, never the source personal account |
-| Settle-up proposal & confirmation | 👥 Shared | Both partners must confirm before balance changes; optional own-account balance adjustment (`settlement_postings`) stays private |
+Automated UI, privacy, authentication and storage checks pass. Physical-device verification and reset-link handling still need final validation. There is no automatic in-app updater or biometric app lock in this version. Install later versions from Releases.
 
-- **No in-place scope mutation:** switching an expense between `Individual` and `Together` soft-deletes the old row (`deleted_at`) and inserts a brand-new UUID row so private history never leaks.
-- **No foreign key leak:** local `transactions.account_id` has no FK constraint to local `accounts`, allowing shared expenses paid from a partner's unreadable personal account to sync cleanly.
+## Local development
 
----
+Use Flutter 3.47.7 and Java 17. From `app/`:
 
-## 1. Supabase Setup & Migrations
-
-1. Create a free Supabase project at [supabase.com](https://supabase.com).
-2. Link and apply migrations + seed data using the Supabase CLI:
-   ```bash
-   supabase link --project-ref <YOUR_PROJECT_REF>
-   supabase db push
-   supabase db execute --file supabase/seed.sql
-   ```
-3. Deploy the daily ECB exchange-rate Edge Function (`frankfurter.app`):
-   ```bash
-   supabase functions deploy fetch-fx-rates
-   ```
-4. Run the pgTAP privacy & integrity test suite:
-   ```bash
-   supabase test db
-   ```
-
----
-
-## 2. Release Keystore Generation & Backup (Critical for Sideloading)
-
-Android requires every sideloaded APK update (including updates via the in-app updater) to be signed with the **exact same keystore**. Generate it once and back it up securely (e.g. password manager):
-
-```bash
-keytool -genkey -v \
-  -keystore app/android/app/release-keystore.jks \
-  -keyalg RSA -keysize 2048 -validity 10000 \
-  -alias duowallet
-```
-
-Create `app/android/key.properties` (git-ignored):
-
-```properties
-storePassword=<YOUR_STORE_PASSWORD>
-keyPassword=<YOUR_KEY_PASSWORD>
-keyAlias=duowallet
-storeFile=release-keystore.jks
-```
-
----
-
-## 3. Build & Sideload the APK
-
-From `app/`:
-
-```bash
+```sh
 flutter pub get
 flutter analyze
 flutter test
-
-flutter build apk --release \
-  --dart-define=SUPABASE_URL=https://<PROJECT_REF>.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=<YOUR_SUPABASE_ANON_KEY> \
-  --dart-define=RELEASE_MANIFEST_URL=https://<PROJECT_REF>.supabase.co/storage/v1/object/public/releases/latest.json
+flutter run --dart-define=DUO_DEMO_MODE=true
 ```
 
-Install `app/build/app/outputs/flutter-apk/app-release.apk` on both phones and allow **Install unknown apps** for Duo Wallet so future in-app OTA updates install seamlessly.
+Demo mode is explicit and isolated from production. A normal build with missing cloud configuration fails closed.
 
----
+## Production configuration
 
-## 4. GitHub Actions CI & Keep-Alive
+Copy `app/config/production.example.json` to the ignored `app/config/production.json` and supply your own Supabase URL and publishable client key. Configure verified-email authentication, strong passwords and custom SMTP in your own Supabase project. Never use a service-role key in an application build.
 
-Configure the following repository secrets in GitHub (`Settings -> Secrets and variables -> Actions`):
+```sh
+cd app
+flutter build apk --release --dart-define-from-file=config/production.json
+```
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `RELEASE_KEYSTORE_BASE64` (`base64 -w0 app/android/app/release-keystore.jks`)
-- `KEYSTORE_PASSWORD`
-- `KEY_PASSWORD`
-- `KEY_ALIAS`
+Release signing requires an ignored `app/android/key.properties` file with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Generate a dedicated Android release keystore and back it up securely outside the repository. Release builds cannot fall back to debug signing.
 
-Workflows included:
-- `.github/workflows/ci.yml` — runs `flutter analyze` and `flutter test` on every push/PR, and builds + uploads the signed APK and `latest.json` on `v*` tags.
-- `.github/workflows/keepalive.yml` — pings Supabase REST every 3 days (`0 6 */3 * *`) so the free tier never pauses due to 7 days of inactivity.
+The repository contains no deployment URL, real API key, SMTP password or signing key. A production APK necessarily includes its public Supabase URL and publishable client key; server-side Auth and RLS enforce access. Administrator and SMTP credentials must never be packaged.
+
+## Database and backend verification
+
+Timestamped migrations in `supabase/migrations/` reproduce the schema and security policies. Historical canonical SQL is retained in `supabase/reference/` for reference, not for replay alongside the migrations. Use Supabase CLI to link your own project, review the pending migrations, and apply them. Do not seed production with demo data.
+
+Run `supabase test db` against a local stack. Real API/storage checks are available in `scripts/verify_supabase.py`; they read credentials from a private JSON file and create/remove disposable test identities. Hosted checks require explicit `--allow-live`. The SDK integration test is opt-in with `SUPABASE_TEST_STATUS_FILE` pointing to an ignored/private Supabase status file.
+
+## GitHub Actions
+
+Pushes, pull requests and version tags run static analysis and tests. Signed release APKs are built locally and uploaded to GitHub Releases. Deployment configuration, SMTP credentials and signing material stay outside GitHub; no repository secrets are required.
+
+There is no scheduled production keep-alive job. Free-tier Supabase availability and pausing must be monitored by the backend operator.
+
+## Reports
+
+- [Detailed UI/UX audit](docs/ui-ux-audit.md)
+- [Implementation plan](docs/ui-ux-implementation-plan.md)
+- [UI verification](docs/ui-ux-implementation-status.md)
+- [Backend verification and remaining checks](docs/supabase-production-status.md)

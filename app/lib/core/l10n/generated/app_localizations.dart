@@ -32,9 +32,9 @@ class AppLocalizations {
   String get activity => t('Shared Activity', 'Közös aktivitás');
   String get exportBackup => t('Export & Backup', 'Exportálás és mentés');
   String get settings => t('Settings', 'Beállítások');
-  String get viewTogether => t('Together', 'Közös');
-  String get viewIndividual => t('Individual', 'Egyéni');
-  String get viewMyTotal => t('My Total', 'Saját összesen');
+  String get viewTogether => t('Shared', 'Közös');
+  String get viewIndividual => t('Personal', 'Saját');
+  String get viewMyTotal => t('All Mine', 'Összes saját');
   String get quickAdd => t('Quick Add', 'Gyors rögzítés');
   String get expense => t('Expense', 'Kiadás');
   String get income => t('Income', 'Bevétel');

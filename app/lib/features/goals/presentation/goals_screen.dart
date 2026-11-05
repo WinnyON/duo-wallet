@@ -1,499 +1,367 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-
 import '../../../core/db/app_database.dart';
 import '../../../core/db/tables/tables.dart';
-import '../../../core/domain/projection.dart';
+import '../../../core/domain/views.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/currency.dart';
 import '../../../core/money/money.dart';
+import '../../../router.dart';
+import '../../../theme.dart';
 
 class GoalsScreen extends ConsumerStatefulWidget {
-  const GoalsScreen({super.key});
-
+  const GoalsScreen({super.key, this.initialScope = 'shared'});
+  final String initialScope;
   @override
   ConsumerState<GoalsScreen> createState() => _GoalsScreenState();
 }
 
 class _GoalsScreenState extends ConsumerState<GoalsScreen> {
-  static const _uuid = Uuid();
-  String _scopeFilter = 'shared'; // 'shared' | 'personal'
-
-  Future<void> _showContributeDialog(
-    BuildContext context,
-    AppDatabase db,
-    String meId,
-    Goal goal,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final amountCtrl = TextEditingController();
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          '${l10n.t("Contribute to", "Befizetés ide:")} ${goal.name}',
-        ),
-        content: TextField(
-          controller: amountCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText:
-                '${l10n.t("Amount", "Összeg")} (${goal.currency.code})',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(l10n.t('Cancel', 'Mégse')),
-          ),
-          FilledButton(
-            onPressed: () {
-              final major =
-                  double.tryParse(amountCtrl.text.trim().replaceAll(',', '.')) ??
-                      0;
-              if (major <= 0) return;
-              final money = Money.fromMajor(major, goal.currency);
-              final updatedContribs =
-                  Map<String, int>.from(goal.contributionsByUser);
-              updatedContribs[meId] =
-                  (updatedContribs[meId] ?? 0) + money.amountMinor;
-
-              final updatedGoal = Goal(
-                id: goal.id,
-                householdId: goal.householdId,
-                name: goal.name,
-                type: goal.type,
-                scope: goal.scope,
-                ownerId: goal.ownerId,
-                targetAmountMinor: goal.targetAmountMinor,
-                currency: goal.currency,
-                deadline: goal.deadline,
-                savedAmountMinor: goal.savedAmountMinor + money.amountMinor,
-                annualInterestRatePct: goal.annualInterestRatePct,
-                linkedAccountIds: goal.linkedAccountIds,
-                contributionsByUser: updatedContribs,
-                updatedAt: DateTime.now(),
-              );
-              db.upsertGoal(updatedGoal);
-
-              if (goal.isShared) {
-                final meName = db.findProfile(meId)?.displayName ?? 'Partner';
-                db.addActivity(
-                  ActivityEvent(
-                    id: _uuid.v4(),
-                    householdId: goal.householdId,
-                    actorId: meId,
-                    eventType: 'goal_milestone',
-                    summaryEn:
-                        '$meName contributed ${money.format(locale: "en")} to ${goal.name}',
-                    summaryHu:
-                        '$meName befizetett ${money.format(locale: "hu")}-ot ide: ${goal.name}',
-                    amountMinor: money.amountMinor,
-                    currency: goal.currency,
-                    createdAt: DateTime.now(),
-                  ),
-                );
-              }
-              Navigator.of(ctx).pop();
-            },
-            child: Text(l10n.t('Contribute', 'Befizetés')),
-          ),
-        ],
-      ),
-    );
+  late String _scope;
+  @override
+  void initState() {
+    super.initState();
+    _scope = widget.initialScope == 'personal' ? 'personal' : 'shared';
   }
 
-  Future<void> _showCreateGoalDialog(
-    BuildContext context,
-    AppDatabase db,
-    String meId,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final nameCtrl = TextEditingController();
-    final targetCtrl = TextEditingController();
-    final rateCtrl = TextEditingController(text: '5.0');
-    final monthsCtrl = TextEditingController(text: '12');
-    var scope = _scopeFilter;
+  int _targetMonths = 6;
 
+  Future<void> _edit(AppDatabase db, String me,
+      {Goal? goal, bool savings = false}) async {
+    final l = AppLocalizations.of(context);
+    final name = TextEditingController(text: goal?.name ?? '');
+    final amount = TextEditingController(
+        text: goal == null
+            ? ''
+            : ((savings ? goal.savedAmountMinor : goal.targetAmountMinor) / 100)
+                .toString());
+    final form = GlobalKey<FormState>();
+    var deadline = goal?.deadline;
+    final initialName = name.text;
+    final initialAmount = amount.text;
+    bool dirty() =>
+        name.text != initialName ||
+        amount.text != initialAmount ||
+        deadline != goal?.deadline;
     await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(l10n.t('New Goal', 'Új cél')),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(
-                      value: 'shared',
-                      label: Text('👥 ${l10n.sharedBadge}'),
-                    ),
-                    ButtonSegment(
-                      value: 'personal',
-                      label: Text('🔒 ${l10n.privateBadge}'),
-                    ),
-                  ],
-                  selected: {scope},
-                  onSelectionChanged: (s) =>
-                      setDialogState(() => scope = s.first),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Goal Name', 'Cél megnevezése'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: targetCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: l10n.t('Target Amount (HUF)', 'Célösszeg (Ft)'),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: rateCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: l10n.t('Interest %', 'Kamat %'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: monthsCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText:
-                              l10n.t('Months to deadline', 'Hónapok száma'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.t('Cancel', 'Mégse')),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameCtrl.text.trim();
-                final targetMajor = int.tryParse(targetCtrl.text.trim()) ?? 0;
-                if (name.isEmpty || targetMajor <= 0) return;
-                final rate =
-                    double.tryParse(rateCtrl.text.trim().replaceAll(',', '.')) ??
-                        0.0;
-                final months =
-                    (int.tryParse(monthsCtrl.text.trim()) ?? 12).clamp(1, 600);
-                final now = DateTime.now();
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          Future<void> close() async {
+            if (await confirmDiscardChanges(ctx, dirty: dirty())) {
+              if (ctx.mounted) Navigator.pop(ctx);
+            }
+          }
 
-                db.upsertGoal(
-                  Goal(
-                    id: _uuid.v4(),
-                    householdId: db.household?.id ?? 'hh-default-001',
-                    name: name,
-                    type: 'savings',
-                    scope: scope,
-                    ownerId: scope == 'personal' ? meId : null,
-                    targetAmountMinor: targetMajor * 100,
-                    savedAmountMinor: 0,
-                    annualInterestRatePct: rate,
-                    deadline: DateTime(now.year, now.month + months, now.day),
-                    updatedAt: now,
-                  ),
-                );
-                Navigator.of(ctx).pop();
-              },
-              child: Text(l10n.t('Save', 'Mentés')),
-            ),
-          ],
-        ),
-      ),
-    );
+          return StatefulBuilder(
+              builder: (ctx, update) => PopScope(
+                    canPop: false,
+                    onPopInvokedWithResult: (didPop, result) {
+                      if (!didPop) close();
+                    },
+                    child: AlertDialog(
+                      title: Text(savings
+                          ? l.t('Record savings', 'Megtakarítás rögzítése')
+                          : goal == null
+                              ? l.t('New goal', 'Új cél')
+                              : l.t('Edit goal', 'Cél szerkesztése')),
+                      content: SingleChildScrollView(
+                          child: Form(
+                              key: form,
+                              child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (savings)
+                                      Text(l.t(
+                                          'Set the correct total saved, including corrections or reversals. Account balances stay unchanged.',
+                                          'Add meg a helyes teljes megtakarítást; javítás és visszavonás is lehetséges. A számlaegyenlegek nem változnak.')),
+                                    if (!savings)
+                                      TextFormField(
+                                          controller: name,
+                                          decoration: InputDecoration(
+                                              labelText:
+                                                  l.t('Name', 'Megnevezés')),
+                                          validator: (v) =>
+                                              v == null || v.trim().isEmpty
+                                                  ? l.t('Enter a name',
+                                                      'Adj meg nevet')
+                                                  : null),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                        controller: amount,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(decimal: true),
+                                        decoration: InputDecoration(
+                                            labelText:
+                                                '${savings ? l.t("Saved total", "Teljes megtakarítás") : l.t("Target", "Célösszeg")} (${goal?.currency.code ?? "HUF"})'),
+                                        validator: (v) => parsePositiveAmount(
+                                                    v ?? '',
+                                                    allowZero: savings) ==
+                                                null
+                                            ? l.t('Enter a valid amount',
+                                                'Adj meg érvényes összeget')
+                                            : null),
+                                    if (!savings)
+                                      TextButton.icon(
+                                          onPressed: () async {
+                                            final picked = await showDatePicker(
+                                                context: ctx,
+                                                initialDate: deadline ??
+                                                    DateTime.now().add(
+                                                        const Duration(
+                                                            days: 365)),
+                                                firstDate: DateTime(2000),
+                                                lastDate: DateTime(2200));
+                                            if (picked != null) {
+                                              update(() => deadline = picked);
+                                            }
+                                          },
+                                          icon:
+                                              const Icon(Icons.calendar_today),
+                                          label: Text(deadline == null
+                                              ? l.t('Choose deadline',
+                                                  'Határidő kiválasztása')
+                                              : DateFormat.yMMMd(
+                                                      l.locale.languageCode)
+                                                  .format(deadline!))),
+                                  ]))),
+                      actions: [
+                        TextButton(
+                            onPressed: close,
+                            child: Text(l.t('Cancel', 'Mégse'))),
+                        FilledButton(
+                            onPressed: () {
+                              if (!form.currentState!.validate()) return;
+                              final minor = Money.fromMajor(
+                                      parsePositiveAmount(amount.text,
+                                          allowZero: savings)!,
+                                      goal?.currency ?? CurrencyCode.huf)
+                                  .amountMinor;
+                              final json = goal?.toJson() ??
+                                  Goal(
+                                          id: const Uuid().v4(),
+                                          householdId: db.household?.id ??
+                                              'hh-default-001',
+                                          name: name.text.trim(),
+                                          scope: _scope,
+                                          ownerId:
+                                              _scope == 'personal' ? me : null,
+                                          targetAmountMinor: minor,
+                                          updatedAt: DateTime.now())
+                                      .toJson();
+                              if (savings) {
+                                final difference =
+                                    minor - goal!.savedAmountMinor;
+                                final contributions = Map<String, int>.from(
+                                    goal.contributionsByUser);
+                                contributions[me] =
+                                    (contributions[me] ?? 0) + difference;
+                                json['saved_amount_minor'] = minor;
+                                json['contributions_by_user'] = contributions;
+                              } else {
+                                json['name'] = name.text.trim();
+                                json['target_amount_minor'] = minor;
+                                json['deadline'] = deadline?.toIso8601String();
+                              }
+                              json['updated_at'] =
+                                  DateTime.now().toIso8601String();
+                              db.upsertGoal(Goal.fromJson(json));
+                              Navigator.pop(ctx);
+                            },
+                            child: Text(l.t('Save', 'Mentés'))),
+                      ],
+                    ),
+                  ));
+        });
+    name.dispose();
+    amount.dispose();
+  }
+
+  Future<void> _remove(AppDatabase db, Goal goal) async {
+    final l = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+                title: Text(l.t('Archive goal?', 'Cél archiválása?')),
+                content: Text(goal.name),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(l.t('Cancel', 'Mégse'))),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(l.t('Archive', 'Archiválás')))
+                ]));
+    if (confirmed == true) {
+      db.upsertGoal(Goal.fromJson({
+        ...goal.toJson(),
+        'deleted_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String()
+      }));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(dbTickProvider);
     final db = ref.watch(appDatabaseProvider);
-    final meId = ref.watch(currentUserIdProvider);
-    final hideAmounts = ref.watch(hideAmountsProvider);
-    final l10n = AppLocalizations.of(context);
-    final localeStr = l10n.locale.languageCode;
+    final me = ref.watch(currentUserIdProvider);
+    final hidden = ref.watch(hideAmountsProvider);
+    final l = AppLocalizations.of(context);
+    final locale = l.locale.languageCode;
+    final goals = db.goals
+        .where((g) =>
+            g.deletedAt == null &&
+            g.scope == _scope &&
+            (g.isShared || g.ownerId == null || g.ownerId == me))
+        .toList();
+    final totals = <CurrencyCode, ({int saved, int target})>{};
+    for (final goal in goals) {
+      final old = totals[goal.currency] ?? (saved: 0, target: 0);
+      totals[goal.currency] = (
+        saved: old.saved + goal.savedAmountMinor,
+        target: old.target + goal.targetAmountMinor
+      );
+    }
     final now = DateTime.now();
-
-    // Filter out any personal goal not owned by currentUserId
-    final visibleGoals = db.goals.where((g) {
-      if (g.isShared) return _scopeFilter == 'shared';
-      return _scopeFilter == 'personal' &&
-          (g.ownerId == null || g.ownerId == meId);
-    }).toList();
-
-    final essentialCatIds = db.categories
-        .where((c) => c.isEssential)
-        .map((c) => c.id)
-        .toSet();
-    final targetMonths = db.household?.emergencyFundMonths ?? 6;
-
-    final computedSharedEfTarget = computeEmergencyFundTarget(
-      transactions: db.transactions,
-      essentialCategoryIds: essentialCatIds,
-      isSharedFund: true,
-      meId: meId,
-      targetMonths: targetMonths,
-    );
-    final computedPersonalEfTarget = computeEmergencyFundTarget(
-      transactions: db.transactions,
-      essentialCategoryIds: essentialCatIds,
-      isSharedFund: false,
-      meId: meId,
-      targetMonths: targetMonths,
-    );
-
-    final sharedEfGoal = db.goals
-        .where((g) => g.isEmergencyFund && g.isShared)
-        .firstOrNull;
-    final personalEfGoal = db.goals
-        .where(
-          (g) =>
-              g.isEmergencyFund &&
-              !g.isShared &&
-              (g.ownerId == null || g.ownerId == meId),
-        )
-        .firstOrNull;
-
-    final sharedEfTargetMinor = sharedEfGoal?.targetAmountMinor ??
-        (computedSharedEfTarget > 0 ? computedSharedEfTarget : 60000000);
-    final sharedEfSavedMinor = sharedEfGoal?.savedAmountMinor ?? 0;
-    final sharedMonthlyEssential = targetMonths > 0
-        ? (sharedEfTargetMinor / targetMonths)
-        : 1.0;
-    final sharedMonthsCovered = sharedMonthlyEssential > 0
-        ? (sharedEfSavedMinor / sharedMonthlyEssential)
-        : 0.0;
-
-    final personalEfTargetMinor = personalEfGoal?.targetAmountMinor ??
-        (computedPersonalEfTarget > 0 ? computedPersonalEfTarget : 45000000);
-    final personalEfSavedMinor = personalEfGoal?.savedAmountMinor ?? 0;
-    final personalMonthlyEssential = targetMonths > 0
-        ? (personalEfTargetMinor / targetMonths)
-        : 1.0;
-    final personalMonthsCovered = personalMonthlyEssential > 0
-        ? (personalEfSavedMinor / personalMonthlyEssential)
-        : 0.0;
-
+    final start = DateTime(now.year, now.month - 3);
+    final end = DateTime(now.year, now.month);
+    final essential =
+        db.categories.where((c) => c.isEssential).map((c) => c.id).toSet();
+    final history = db.transactions
+        .where((t) =>
+            !t.occurredOn.isBefore(start) &&
+            t.occurredOn.isBefore(end) &&
+            essential.contains(t.categoryId) &&
+            amountFor(
+                    t,
+                    _scope == 'shared'
+                        ? ExpenseView.together
+                        : ExpenseView.myTotal,
+                    me) >
+                0)
+        .toList();
+    final essentialTotal = history.fold<int>(
+        0,
+        (sum, t) =>
+            sum +
+            amountFor(
+                t,
+                _scope == 'shared' ? ExpenseView.together : ExpenseView.myTotal,
+                me));
+    final efTarget = (essentialTotal / 3 * _targetMonths).round();
+    String money(int value, CurrencyCode currency) =>
+        Money(value, currency).format(locale: locale, hideAmounts: hidden);
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.goals),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () => _showCreateGoalDialog(context, db, meId),
-          ),
-        ],
-      ),
+          leading: IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: l.t('Menu', 'Menü'),
+              onPressed: () => AppShell.openDrawer(context)),
+          title: Text(l.goals),
+          actions: [
+            IconButton(
+                tooltip: l.t('New goal', 'Új cél'),
+                icon: const Icon(Icons.add),
+                onPressed: () => _edit(db, me))
+          ]),
       body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Emergency Fund Summary Card (Shared 👥 and Personal 🔒)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.shield_outlined),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${l10n.emergencyFund} ($targetMonths ${l10n.t("months target", "havi cél")})',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '👥 ${l10n.t("Shared Emergency Fund:", "Közös vésztartalék:")} '
-                    '${Money(sharedEfSavedMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} / '
-                    '${Money(sharedEfTargetMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} '
-                    '• ${sharedMonthsCovered.toStringAsFixed(1)} ${l10n.t("months covered", "hónap fedezve")}',
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '🔒 ${l10n.t("Personal Emergency Fund:", "Saját vésztartalék:")} '
-                    '${Money(personalEfSavedMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} / '
-                    '${Money(personalEfTargetMinor, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} '
-                    '• ${personalMonthsCovered.toStringAsFixed(1)} ${l10n.t("months covered", "hónap fedezve")}',
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    l10n.t(
-                      'Auto-calculated from essential expenses: ${Money(computedSharedEfTarget, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} (Shared) / ${Money(computedPersonalEfTarget, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} (My Total)',
-                      'Alapvető kiadásokból számított $targetMonths havi cél: ${Money(computedSharedEfTarget, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} (Közös) / ${Money(computedPersonalEfTarget, CurrencyCode.huf).format(locale: localeStr, hideAmounts: hideAmounts)} (Saját)',
-                    ),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          SegmentedButton<String>(
-            segments: [
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
+          children: [
+            SegmentedButton<String>(segments: [
               ButtonSegment(
-                value: 'shared',
-                label: Text('👥 ${l10n.t("Shared Goals", "Közös célok")}'),
-              ),
+                  value: 'shared', label: Text(l.t('Shared', 'Közös'))),
               ButtonSegment(
-                value: 'personal',
-                label: Text('🔒 ${l10n.t("Personal Goals", "Saját célok")}'),
-              ),
-            ],
-            selected: {_scopeFilter},
-            onSelectionChanged: (s) =>
-                setState(() => _scopeFilter = s.first),
-          ),
-          const SizedBox(height: 16),
-
-          if (visibleGoals.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  l10n.t(
-                    'No goals in this view yet.',
-                    'Ebben a nézetben még nincs cél.',
-                  ),
-                ),
-              ),
-            ),
-
-          for (final g in visibleGoals)
-            Builder(
-              builder: (context) {
-                final progress = g.targetAmountMinor > 0
-                    ? (g.savedAmountMinor / g.targetAmountMinor).clamp(0.0, 1.0)
-                    : 0.0;
-                final pct = (progress * 100).round();
-
-                int? requiredMonthlyMinor;
-                if (g.deadline != null &&
-                    g.savedAmountMinor < g.targetAmountMinor) {
-                  final monthsLeft = ((g.deadline!.year - now.year) * 12 +
-                          (g.deadline!.month - now.month))
-                      .clamp(1, 600);
-                  requiredMonthlyMinor = solveRequiredMonthlyContribution(
-                    startMinor: g.savedAmountMinor,
-                    targetMinor: g.targetAmountMinor,
-                    annualRatePct: g.annualInterestRatePct,
-                    compounding: Compounding.monthly,
-                    months: monthsLeft,
-                  );
-                }
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
+                  value: 'personal', label: Text(l.t('Personal', 'Saját')))
+            ], selected: {
+              _scope
+            }, onSelectionChanged: (s) => setState(() => _scope = s.first)),
+            const SizedBox(height: 12),
+            for (final entry in totals.entries)
+              DuoCard(
+                  child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${g.isShared ? "👥" : "🔒"} ${g.name}',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                            ),
-                            Text(
-                              '$pct%',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 10,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${Money(g.savedAmountMinor, g.currency).format(locale: localeStr, hideAmounts: hideAmounts)} / '
-                          '${Money(g.targetAmountMinor, g.currency).format(locale: localeStr, hideAmounts: hideAmounts)}',
-                        ),
-                        if (requiredMonthlyMinor != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            l10n.t(
-                              'Required monthly saving: ${Money(requiredMonthlyMinor, g.currency).format(locale: localeStr, hideAmounts: hideAmounts)}/mo',
-                              'Szükséges havi megtakarítás: ${Money(requiredMonthlyMinor, g.currency).format(locale: localeStr, hideAmounts: hideAmounts)}/hó',
-                            ),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        if (g.isShared && g.contributionsByUser.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 12,
-                            children: g.contributionsByUser.entries.map((e) {
-                              final name =
-                                  db.findProfile(e.key)?.displayName ?? e.key;
-                              final amt = Money(e.value, g.currency).format(
-                                locale: localeStr,
-                                hideAmounts: hideAmounts,
-                              );
-                              return Chip(
-                                visualDensity: VisualDensity.compact,
-                                label: Text('$name: $amt'),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton.tonalIcon(
-                            onPressed: () =>
-                                _showContributeDialog(context, db, meId, g),
-                            icon: const Icon(Icons.add),
-                            label: Text(l10n.t('Contribute', 'Befizetés')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+                    Text(l.t('Saved / target', 'Megtakarítva / célösszeg')),
+                    Text(
+                        '${money(entry.value.saved, entry.key)} / ${money(entry.value.target, entry.key)}',
+                        style: Theme.of(context).textTheme.titleLarge)
+                  ])),
+            DuoCard(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(l.emergencyFund,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(history.isEmpty
+                      ? l.t(
+                          'Insufficient essential spending history. Mark essential categories and record expenses to calculate a target.',
+                          'Nincs elegendő alapvető kiadási adat. Jelöld az alapvető kategóriákat, és rögzíts kiadásokat a cél kiszámításához.')
+                      : l.t(
+                          'Suggested target: ${money(efTarget, CurrencyCode.huf)}',
+                          'Javasolt cél: ${money(efTarget, CurrencyCode.huf)}')),
+                  Text(l.t(
+                      'Uses essential categories in the selected scope, averaged over the last three complete months (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).',
+                      'A kiválasztott nézet alapvető kategóriáit használja az utolsó három teljes hónap átlagával (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).')),
+                  DropdownButtonFormField<int>(
+                      initialValue: _targetMonths,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                          labelText:
+                              l.t('Months to cover', 'Fedezendő hónapok')),
+                      items: [3, 6, 9, 12]
+                          .map((n) =>
+                              DropdownMenuItem(value: n, child: Text('$n')))
+                          .toList(),
+                      onChanged: (n) {
+                        if (n != null) setState(() => _targetMonths = n);
+                      }),
+                ])),
+            if (goals.isEmpty)
+              DuoCard(
+                  child: Column(children: [
+                Text(l.t('No goals in this view yet.',
+                    'Ebben a nézetben még nincs cél.')),
+                TextButton(
+                    onPressed: () => _edit(db, me),
+                    child: Text(l.t('Create goal', 'Cél létrehozása')))
+              ])),
+            for (final g in goals)
+              DuoCard(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(g.name, style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    DuoProgressBar(
+                        value: g.targetAmountMinor > 0
+                            ? (g.savedAmountMinor / g.targetAmountMinor)
+                                .clamp(0.0, 1.0)
+                            : 0,
+                        color: context.duo.positive),
+                    const SizedBox(height: 8),
+                    Text(
+                        '${money(g.savedAmountMinor, g.currency)} / ${money(g.targetAmountMinor, g.currency)}'),
+                    if (g.deadline != null)
+                      Text(DateFormat.yMMMd(locale).format(g.deadline!)),
+                    Wrap(spacing: 8, children: [
+                      FilledButton.tonal(
+                          onPressed: () =>
+                              _edit(db, me, goal: g, savings: true),
+                          child: Text(
+                              l.t('Record savings', 'Megtakarítás rögzítése'))),
+                      TextButton(
+                          onPressed: () => _edit(db, me, goal: g),
+                          child: Text(l.t('Edit', 'Szerkesztés'))),
+                      TextButton(
+                          onPressed: () => _remove(db, g),
+                          child: Text(l.t('Archive', 'Archiválás'))),
+                    ]),
+                  ])),
+          ]),
     );
   }
 }

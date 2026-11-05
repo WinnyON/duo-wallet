@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/auth/backend_session.dart';
+import '../../../core/auth/cloud_status.dart';
 import '../../../core/db/tables/tables.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
-import '../../../core/money/currency.dart';
+import '../../../router.dart';
 import '../../../core/money/money.dart';
+import '../../../theme.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -16,483 +18,363 @@ class AuthScreen extends ConsumerStatefulWidget {
 }
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
-  final _emailCtrl = TextEditingController(text: 'sam@duowallet.local');
-  final _passwordCtrl = TextEditingController(text: '••••••••');
-  final _householdNameCtrl = TextEditingController();
-  final _inviteCodeCtrl = TextEditingController();
-  final _displayNameCtrl = TextEditingController();
-  final _contributionCtrl = TextEditingController();
+  final _form = GlobalKey<FormState>();
+  final _nameFocus = FocusNode();
+  final _amountFocus = FocusNode();
+  final _urlFocus = FocusNode();
+  final _householdFocus = FocusNode();
+  final _nameField = GlobalKey<FormFieldState<String>>();
+  final _amountField = GlobalKey<FormFieldState<String>>();
+  final _urlField = GlobalKey<FormFieldState<String>>();
+  final _householdField = GlobalKey<FormFieldState<String>>();
+  final _name = TextEditingController();
+  final _contribution = TextEditingController();
+  final _url = TextEditingController();
+  final _householdName = TextEditingController();
+  String? _loaded;
+  String _color = '#4F46E5';
+  String _avatar = 'initials';
+  String _initial = '';
+  bool _discardAuthorized = false;
+  String get _draft => [
+        _name.text,
+        _contribution.text,
+        _url.text,
+        _householdName.text,
+        _color,
+        _avatar
+      ].join('\u0000');
+  bool get _dirty => _draft != _initial;
 
-  bool _isSignUp = false;
-  bool _signedIn = true;
-  String _selectedColor = '#4F46E5';
-  String? _loadedUserId;
-
-  static const _palette = [
-    ('#4F46E5', 'Indigo'),
-    ('#EC4899', 'Pink'),
-    ('#10B981', 'Emerald'),
-    ('#F59E0B', 'Amber'),
-    ('#3B82F6', 'Blue'),
-    ('#EF4444', 'Red'),
-  ];
+  void _load(Profile? profile, Household? household, String id) {
+    if (_loaded == id) return;
+    _loaded = id;
+    _name.text = profile?.displayName ?? '';
+    _contribution.text = profile?.monthlyCommonContributionMinor == null
+        ? ''
+        : ((profile!.monthlyCommonContributionMinor!) / 100).toStringAsFixed(2);
+    _url.text = profile?.avatarUrl ?? '';
+    _householdName.text = household?.name ?? '';
+    _color = profile?.color ?? '#4F46E5';
+    _avatar = profile?.avatarType ?? 'initials';
+    _initial = _draft;
+  }
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _householdNameCtrl.dispose();
-    _inviteCodeCtrl.dispose();
-    _displayNameCtrl.dispose();
-    _contributionCtrl.dispose();
+    for (final controller in [_name, _contribution, _url, _householdName]) {
+      controller.dispose();
+    }
+    for (final node in [_nameFocus, _amountFocus, _urlFocus, _householdFocus]) {
+      node.dispose();
+    }
     super.dispose();
   }
 
-  void _syncProfileFields(Profile? profile, Household? hh) {
-    if (profile == null || _loadedUserId == profile.id) return;
-    _loadedUserId = profile.id;
-    _displayNameCtrl.text = profile.displayName;
-    _selectedColor = profile.color;
-    final contribMajor = (profile.monthlyCommonContributionMinor ?? 0) ~/ 100;
-    _contributionCtrl.text = contribMajor > 0 ? contribMajor.toString() : '';
-    _householdNameCtrl.text = hh?.name ?? 'Sam & Anna';
-    _inviteCodeCtrl.text = hh?.inviteCode ?? 'DUO-2026';
-  }
-
-  Color _parseHex(String hex) {
-    final clean = hex.replaceAll('#', '');
-    final val = int.tryParse('FF$clean', radix: 16) ?? 0xFF4F46E5;
-    return Color(val);
-  }
-
-  void _switchDemoUser(String targetUserId) {
-    final db = ref.read(appDatabaseProvider);
-    final partnerId = targetUserId == 'user-sam' ? 'user-anna' : 'user-sam';
-    ref.read(currentUserIdProvider.notifier).state = targetUserId;
-    ref.read(partnerUserIdProvider.notifier).state = partnerId;
-    final p = db.findProfile(targetUserId);
-    if (p != null) {
-      setState(() {
-        _loadedUserId = null;
-        _syncProfileFields(p, db.household);
-      });
-    }
-  }
-
-  void _saveProfile(AppDatabase db, Profile? existing) {
-    final l10n = AppLocalizations.of(context);
-    final meId = ref.read(currentUserIdProvider);
-    final locale = ref.read(appLocaleProvider);
-    final contribMajor =
-        int.tryParse(_contributionCtrl.text.replaceAll(' ', '')) ?? 0;
-
-    final updated = Profile(
-      id: meId,
-      householdId: db.household?.id ?? 'hh-default-001',
-      displayName: _displayNameCtrl.text.trim().isEmpty
-          ? (existing?.displayName ?? 'User')
-          : _displayNameCtrl.text.trim(),
-      color: _selectedColor,
-      locale: locale,
-      monthlyCommonContributionMinor: contribMajor > 0
-          ? contribMajor * 100
-          : null,
-      updatedAt: DateTime.now(),
-    );
-    db.upsertProfile(updated);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.t('Profile saved', 'Profil mentve')),
-      ),
-    );
-  }
-
-  void _createOrUpdateHousehold(AppDatabase db) {
-    final l10n = AppLocalizations.of(context);
-    final existing = db.household;
-    final name = _householdNameCtrl.text.trim().isEmpty
-        ? 'Duo Household'
-        : _householdNameCtrl.text.trim();
-    final code = _inviteCodeCtrl.text.trim().isEmpty
-        ? 'DUO-${DateTime.now().year}'
-        : _inviteCodeCtrl.text.trim().toUpperCase();
-
-    final hh = Household(
-      id: existing?.id ?? const Uuid().v4(),
-      name: name,
-      baseCurrency: existing?.baseCurrency ?? CurrencyCode.huf,
-      defaultSplitPct: existing?.defaultSplitPct ?? 50,
-      inviteCode: code,
-      emergencyFundMonths: existing?.emergencyFundMonths ?? 6,
-      createdAt: existing?.createdAt ?? DateTime.now(),
-    );
-    db.upsertHousehold(hh);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          l10n.t(
-            'Household updated (Invite: $code)',
-            'Háztartás frissítve (Kód: $code)',
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _joinByInviteCode(AppDatabase db) {
-    final l10n = AppLocalizations.of(context);
-    final code = _inviteCodeCtrl.text.trim().toUpperCase();
-    if (db.profiles.length >= 2 &&
-        code == (db.household?.inviteCode ?? 'DUO-2026')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            l10n.t(
-              'Connected to household "${db.household?.name}" (2/2 members active). Sign-ups closed for 3rd member.',
-              'Csatlakoztatva a "${db.household?.name}" háztartáshoz (2/2 tag aktív). Harmadik tag nem léphet be.',
-            ),
-          ),
-        ),
-      );
+  void _save(AppDatabase db, Profile? profile) {
+    if (!_form.currentState!.validate()) {
+      for (final field in [
+        (_urlField, _urlFocus),
+        (_nameField, _nameFocus),
+        (_amountField, _amountFocus),
+        (_householdField, _householdFocus)
+      ]) {
+        if (field.$1.currentState?.hasError ?? false) {
+          field.$2.requestFocus();
+          Scrollable.ensureVisible(field.$1.currentContext!, alignment: .2);
+          break;
+        }
+      }
       return;
     }
-    _createOrUpdateHousehold(db);
+    final household = db.household;
+    if (household == null) return;
+    db.upsertProfile(Profile(
+      id: ref.read(currentUserIdProvider),
+      householdId: profile?.householdId ?? household.id,
+      displayName: _name.text.trim(),
+      color: _color,
+      locale: ref.read(appLocaleProvider),
+      monthlyCommonContributionMinor: _contribution.text.trim().isEmpty
+          ? null
+          : (parsePositiveAmount(_contribution.text, allowZero: true)! * 100)
+              .round(),
+      avatarType: _avatar,
+      avatarUrl: _url.text.trim().isEmpty ? null : _url.text.trim(),
+      updatedAt: DateTime.now(),
+    ));
+    db.upsertHousehold(Household(
+        id: household.id,
+        name: _householdName.text.trim(),
+        baseCurrency: household.baseCurrency,
+        defaultSplitPct: household.defaultSplitPct,
+        inviteCode: household.inviteCode,
+        emergencyFundMonths: household.emergencyFundMonths,
+        createdAt: household.createdAt));
+    setState(() => _initial = _draft);
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.t('Local profile saved', 'Helyi profil mentve'))));
+  }
+
+  Future<void> _close() async {
+    if (await confirmDiscardChanges(context, dirty: _dirty) && mounted) {
+      setState(() => _discardAuthorized = true);
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) AppShell.goBackOrHome(context);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(dbTickProvider);
-    final l10n = AppLocalizations.of(context);
     final db = ref.watch(appDatabaseProvider);
-    final meId = ref.watch(currentUserIdProvider);
+    final id = ref.watch(currentUserIdProvider);
+    final profile = db.findProfile(id);
+    final l10n = AppLocalizations.of(context);
     final locale = ref.watch(appLocaleProvider);
-    final hideAmounts = ref.watch(hideAmountsProvider);
-
-    final meProfile = db.findProfile(meId);
-    final hh = db.household;
-    _syncProfileFields(meProfile, hh);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.t('Household & Profile', 'Háztartás és profil')),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Active user / Privacy simulator card
-          Card(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.verified_user_outlined),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          l10n.t(
-                            'Active Phone Session (Privacy Test Switch)',
-                            'Aktív telefon munkamenet (Privát nézet teszt)',
-                          ),
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.t(
-                      'Switch between Sam and Anna to verify that private accounts, individual expenses, and personal budgets/goals are strictly isolated per user.',
-                      'Válts Sam és Anna között, hogy ellenőrizd: a privát számlák, egyéni kiadások és saját keretek szigorúan el vannak különítve.',
-                    ),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'user-sam',
-                        icon: Icon(Icons.person),
-                        label: Text('Sam'),
-                      ),
-                      ButtonSegment(
-                        value: 'user-anna',
-                        icon: Icon(Icons.person_outline),
-                        label: Text('Anna'),
-                      ),
-                    ],
-                    selected: {meId},
-                    onSelectionChanged: (sel) => _switchDemoUser(sel.first),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Profile Editor Card
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.t('My Profile', 'Saját profil'),
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _displayNameCtrl,
-                    decoration: InputDecoration(
-                      labelText: l10n.t('Display Name', 'Megjelenített név'),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.t('Avatar Color', 'Szín'),
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: _palette.map((c) {
-                      final selected = _selectedColor == c.$1;
-                      return ChoiceChip(
-                        avatar: CircleAvatar(backgroundColor: _parseHex(c.$1)),
-                        label: Text(c.$2),
-                        selected: selected,
-                        onSelected: (_) => setState(() => _selectedColor = c.$1),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          l10n.t('App Language', 'Alkalmazás nyelve'),
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                      ),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'en', label: Text('EN')),
-                          ButtonSegment(value: 'hu', label: Text('HU')),
-                        ],
-                        selected: {locale.startsWith('hu') ? 'hu' : 'en'},
-                        onSelectionChanged: (sel) {
-                          ref.read(appLocaleProvider.notifier).state = sel.first;
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _contributionCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: l10n.t(
-                        'Agreed Monthly Common Contribution (HUF)',
-                        'Vállalt havi közös befizetés (Ft)',
-                      ),
-                      helperText: l10n.t(
-                        'Tracked in Common Account cash-flow; never affects Settle-Up debt.',
-                        'A közös számla cash-flow-ban követve; nem befolyásolja az elszámolást.',
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: () => _saveProfile(db, meProfile),
-                    icon: const Icon(Icons.save_outlined),
-                    label: Text(l10n.t('Save Profile', 'Profil mentése')),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Household & Invite Code Card
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        l10n.t('Household (2 Members Max)', 'Háztartás (max. 2 tag)'),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Chip(
-                        avatar: const Icon(Icons.lock_outline, size: 16),
-                        label: Text('${db.profiles.length}/2'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  for (final p in db.profiles)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        backgroundColor: _parseHex(p.color),
-                        foregroundColor: Colors.white,
-                        child: Text(
-                          p.displayName.isNotEmpty ? p.displayName[0] : '?',
-                        ),
-                      ),
-                      title: Text(
-                        '${p.displayName} ${p.id == meId ? "(${l10n.t("You", "Te")})" : ""}',
-                      ),
-                      subtitle: Text(
-                        l10n.t(
-                          'Agreed monthly contribution: ${Money(p.monthlyCommonContributionMinor ?? 0).format(locale: locale, hideAmounts: hideAmounts)}',
-                          'Vállalt havi befizetés: ${Money(p.monthlyCommonContributionMinor ?? 0).format(locale: locale, hideAmounts: hideAmounts)}',
-                        ),
-                      ),
-                    ),
-                  const Divider(),
-                  TextField(
-                    controller: _householdNameCtrl,
-                    decoration: InputDecoration(
-                      labelText: l10n.t('Household Name', 'Háztartás neve'),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _inviteCodeCtrl,
-                    decoration: InputDecoration(
-                      labelText: l10n.t('Invite Code', 'Meghívókód'),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: const Icon(Icons.vpn_key_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: () => _createOrUpdateHousehold(db),
-                        icon: const Icon(Icons.home_outlined),
-                        label: Text(
-                          l10n.t(
-                            'Create / Update Household',
-                            'Háztartás létrehozása / mentése',
-                          ),
-                        ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _joinByInviteCode(db),
-                        icon: const Icon(Icons.group_add_outlined),
-                        label: Text(
-                          l10n.t('Join by Code', 'Csatlakozás kóddal'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Cloud Auth Card
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        l10n.t('Supabase Auth & Sync', 'Supabase belépés és szinkron'),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Chip(
-                        label: Text(
-                          _signedIn
-                              ? l10n.t('Connected', 'Csatlakozva')
-                              : l10n.t('Offline Mode', 'Offline mód'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: l10n.t('Email', 'E-mail cím'),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passwordCtrl,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.t('Password', 'Jelszó'),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      FilledButton(
-                        onPressed: () {
-                          setState(() => _signedIn = true);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                _isSignUp
-                                    ? l10n.t('Account registered', 'Fiók regisztrálva')
-                                    : l10n.t('Signed in', 'Bejelentkezve'),
-                              ),
-                            ),
-                          );
-                        },
-                        child: Text(
-                          _isSignUp
-                              ? l10n.t('Sign Up', 'Regisztráció')
-                              : l10n.t('Sign In', 'Bejelentkezés'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      TextButton(
-                        onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                        child: Text(
-                          _isSignUp
-                              ? l10n.t(
-                                  'Already have an account? Sign In',
-                                  'Már van fiókod? Belépés',
-                                )
-                              : l10n.t(
-                                  'Need an account? Sign Up',
-                                  'Nincs még fiókod? Regisztráció',
-                                ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+    final hidden = ref.watch(hideAmountsProvider);
+    _load(profile, db.household, id);
+    final colors = [
+      ('#4F46E5', l10n.t('Indigo', 'Indigó')),
+      ('#EC4899', l10n.t('Pink', 'Rózsaszín')),
+      ('#10B981', l10n.t('Emerald', 'Smaragd')),
+      ('#F59E0B', l10n.t('Amber', 'Borostyán')),
+      ('#3B82F6', l10n.t('Blue', 'Kék')),
+      ('#EF4444', l10n.t('Red', 'Piros'))
+    ];
+    return PopScope(
+      canPop: !_dirty || _discardAuthorized,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _close();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+            leading: BackButton(onPressed: _close),
+            title: Text(l10n.t('Household & Profile', 'Háztartás és profil'))),
+        body: Form(
+            key: _form,
+            child: ListView(padding: const EdgeInsets.all(16), children: [
+              if (ref.watch(productionModeProvider))
+                const CloudStatusCard()
+              else
+                Card(
+                    child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  l10n.t('Demo • local data',
+                                      'Demó • helyi adatok'),
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 8),
+                              Text(l10n.t(
+                                  'Changes affect this local demo. Sign-in, joining a household and cloud sync are unavailable. Data is not a durable backup.',
+                                  'A módosítások a helyi demót érintik. A belépés, a háztartáshoz csatlakozás és a felhőszinkron nem elérhető. Az adatok nem tartós biztonsági mentések.')),
+                            ]))),
+              const SizedBox(height: 12),
+              Card(
+                  child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(l10n.t('My profile', 'Saját profil'),
+                                style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 16),
+                            UserAvatar(
+                                avatarType: _avatar,
+                                avatarUrl: _url.text,
+                                name: _name.text,
+                                size: 64,
+                                color: Color(int.tryParse(
+                                        _color.replaceFirst('#', 'FF'),
+                                        radix: 16) ??
+                                    0xFF4F46E5)),
+                            const SizedBox(height: 12),
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              for (final choice in [
+                                ('initials', l10n.t('Initials', 'Monogram')),
+                                ('man', l10n.t('Face 1', 'Arc 1')),
+                                ('woman', l10n.t('Face 2', 'Arc 2')),
+                                ('image', l10n.t('Photo URL', 'Kép URL'))
+                              ])
+                                ChoiceChip(
+                                    label: Text(choice.$2),
+                                    selected: _avatar == choice.$1,
+                                    onSelected: (_) =>
+                                        setState(() => _avatar = choice.$1)),
+                            ]),
+                            if (_avatar == 'image') ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                  key: _urlField,
+                                  focusNode: _urlFocus,
+                                  controller: _url,
+                                  onChanged: (_) => setState(() {}),
+                                  decoration: InputDecoration(
+                                      labelText: l10n.t('Optional photo URL',
+                                          'Opcionális kép URL')),
+                                  validator: (text) {
+                                    if (text == null || text.trim().isEmpty) {
+                                      return null;
+                                    }
+                                    final uri = Uri.tryParse(text.trim());
+                                    return uri != null &&
+                                            ['http', 'https']
+                                                .contains(uri.scheme) &&
+                                            uri.host.isNotEmpty
+                                        ? null
+                                        : l10n.t('Enter a valid web address.',
+                                            'Adj meg érvényes webcímet.');
+                                  }),
+                            ],
+                            const SizedBox(height: 12),
+                            TextFormField(
+                                key: _nameField,
+                                focusNode: _nameFocus,
+                                controller: _name,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                    labelText: l10n.t(
+                                        'Display name', 'Megjelenített név')),
+                                validator: (value) => value == null ||
+                                        value.trim().isEmpty
+                                    ? l10n.t(
+                                        'Enter a name.', 'Adj meg egy nevet.')
+                                    : null),
+                            const SizedBox(height: 12),
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              for (final color in colors)
+                                ChoiceChip(
+                                    label: Text(color.$2),
+                                    selected: _color == color.$1,
+                                    onSelected: (_) =>
+                                        setState(() => _color = color.$1))
+                            ]),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                                key: _amountField,
+                                focusNode: _amountFocus,
+                                controller: _contribution,
+                                onChanged: (_) => setState(() {}),
+                                keyboardType: const TextInputType.numberWithOptions(
+                                    decimal: true),
+                                decoration: InputDecoration(
+                                    labelText: l10n.t(
+                                        'Monthly common contribution (HUF)',
+                                        'Havi közös befizetés (HUF)'),
+                                    helperText: l10n.t(
+                                        'Optional agreement; does not change debt.',
+                                        'Opcionális megállapodás; nem módosítja a tartozást.')),
+                                validator: (value) => value == null ||
+                                        value.trim().isEmpty ||
+                                        parsePositiveAmount(value, allowZero: true) !=
+                                            null
+                                    ? null
+                                    : l10n.t(
+                                        'Enter a valid non-negative amount.',
+                                        'Adj meg érvényes, nem negatív összeget.')),
+                            const SizedBox(height: 12),
+                            Text(l10n.t('Language', 'Nyelv')),
+                            Wrap(spacing: 8, children: [
+                              for (final language in [
+                                ('en', 'English'),
+                                ('hu', 'Magyar')
+                              ])
+                                ChoiceChip(
+                                    label: Text(language.$2),
+                                    selected: locale.startsWith(language.$1),
+                                    onSelected: (_) => ref
+                                        .read(appLocaleProvider.notifier)
+                                        .state = language.$1)
+                            ]),
+                          ]))),
+              const SizedBox(height: 12),
+              Card(
+                  child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(l10n.t('Local household', 'Helyi háztartás'),
+                                style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                                key: _householdField,
+                                focusNode: _householdFocus,
+                                controller: _householdName,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                    labelText: l10n.t(
+                                        'Household name', 'Háztartás neve')),
+                                validator: (value) =>
+                                    value == null || value.trim().isEmpty
+                                        ? l10n.t('Enter a household name.',
+                                            'Add meg a háztartás nevét.')
+                                        : null),
+                            for (final member in db.profiles)
+                              ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(member.displayName),
+                                  subtitle: Text(Money(member
+                                              .monthlyCommonContributionMinor ??
+                                          0)
+                                      .format(
+                                          locale: locale,
+                                          hideAmounts: hidden))),
+                            Text(l10n.t(
+                                ref.watch(productionModeProvider)
+                                    ? 'Share this household’s invite code with your partner to join securely.'
+                                    : 'Joining by invite code is unavailable in this demo.',
+                                ref.watch(productionModeProvider)
+                                    ? 'A párod a háztartás meghívókódjával csatlakozhat biztonságosan.'
+                                    : 'A meghívókódos csatlakozás ebben a demóban nem elérhető.')),
+                          ]))),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                  onPressed: db.household == null || !_dirty
+                      ? null
+                      : () => _save(db, profile),
+                  icon: const Icon(Icons.save_outlined),
+                  label: Text(l10n.t(
+                      'Save local changes', 'Helyi módosítások mentése'))),
+              if (db.household == null)
+                Text(l10n.t('No local household is available.',
+                    'Nem érhető el helyi háztartás.')),
+              const SizedBox(height: 12),
+              if (!ref.watch(productionModeProvider))
+                Card(
+                    child: ExpansionTile(
+                        title: Text(l10n.t('Demo tools', 'Demó eszközök')),
+                        subtitle: Text(l10n.t('Switch local test identity',
+                            'Helyi tesztfelhasználó váltása')),
+                        children: [
+                      for (final member in db.profiles)
+                        ListTile(
+                            title: Text(member.displayName),
+                            selected: id == member.id,
+                            onTap: () async {
+                              if (id == member.id ||
+                                  !await confirmDiscardChanges(context,
+                                      dirty: _dirty) ||
+                                  !mounted) {
+                                return;
+                              }
+                              ref.read(currentUserIdProvider.notifier).state =
+                                  member.id;
+                              final other =
+                                  db.profiles.where((p) => p.id != member.id);
+                              if (other.isNotEmpty) {
+                                ref.read(partnerUserIdProvider.notifier).state =
+                                    other.first.id;
+                              }
+                              setState(() => _loaded = null);
+                            }),
+                    ])),
+            ])),
       ),
     );
   }

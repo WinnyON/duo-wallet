@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/auth/backend_session.dart';
+import '../../../core/auth/cloud_status.dart';
 import '../../../core/db/tables/tables.dart';
-import '../../../core/env.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
-import '../../../core/money/currency.dart';
+import '../../../router.dart';
 import '../../../core/notifications/alert_rules.dart';
 import '../../../theme.dart';
 import '../../widget/home_widget_bridge.dart';
@@ -20,7 +21,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  String? _updaterStatus;
   List<LocalAlert>? _evaluatedAlerts;
 
   @override
@@ -29,9 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final db = ref.watch(appDatabaseProvider);
     final meId = ref.watch(currentUserIdProvider);
     final locale = ref.watch(appLocaleProvider);
-    final displayCurrency = ref.watch(displayCurrencyProvider);
     final hideAmounts = ref.watch(hideAmountsProvider);
-    final appLock = ref.watch(appLockEnabledProvider);
     final themeMode = ref.watch(themeModeProvider);
     final l10n = AppLocalizations.of(context);
 
@@ -39,10 +37,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final defaultSplit = hh?.defaultSplitPct ?? 50;
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.settings)),
+      appBar: AppBar(
+          leading: BackButton(onPressed: () => AppShell.goBackOrHome(context)),
+          title: Text(l10n.settings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (ref.watch(productionModeProvider)) const CloudStatusCard(compact: true) else Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(l10n.t('Demo • local data • cloud sync unavailable',
+                  'Demó • helyi adatok • felhőszinkron nem elérhető'))),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -54,33 +58,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'en', label: Text('English (EN)')),
-                      ButtonSegment(value: 'hu', label: Text('Magyar (HU)')),
-                    ],
-                    selected: {locale},
-                    onSelectionChanged: (s) {
-                      ref.read(appLocaleProvider.notifier).state = s.first;
-                    },
-                  ),
+                  Wrap(spacing: 8, children: [
+                    for (final language in [
+                      ('en', 'English'),
+                      ('hu', 'Magyar')
+                    ])
+                      ChoiceChip(
+                          label: Text(language.$2),
+                          selected: locale.startsWith(language.$1),
+                          onSelected: (_) {
+                            ref.read(appLocaleProvider.notifier).state = language.$1;
+                            if (ref.read(productionModeProvider)) {
+                              final profile = db.findProfile(meId);
+                              if (profile != null) db.upsertProfile(Profile.fromJson({...profile.toJson(), 'locale': language.$1}));
+                            }
+                          }),
+                  ]),
                   const SizedBox(height: 16),
-                  Text(
-                    l10n.t('Display Currency (Reports)', 'Megjelenítési pénznem'),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  SegmentedButton<CurrencyCode>(
-                    segments: const [
-                      ButtonSegment(value: CurrencyCode.huf, label: Text('HUF (Ft)')),
-                      ButtonSegment(value: CurrencyCode.eur, label: Text('EUR (€)')),
-                      ButtonSegment(value: CurrencyCode.ron, label: Text('RON (lei)')),
-                    ],
-                    selected: {displayCurrency},
-                    onSelectionChanged: (s) {
-                      ref.read(displayCurrencyProvider.notifier).state = s.first;
-                    },
-                  ),
+                  Text(l10n.t(
+                      'Reports use HUF. Accounts and goals keep their own currency. Reporting currency conversion is unavailable.',
+                      'A jelentések HUF-ban jelennek meg. A számlák és célok megtartják saját pénznemüket. A jelentések pénznemátváltása nem elérhető.')),
                 ],
               ),
             ),
@@ -91,11 +88,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: [
                 SwitchListTile(
                   secondary: const Icon(Icons.visibility_off_outlined),
-                  title: Text(l10n.t('Hide amounts (Privacy mask)', 'Összegek elrejtése')),
+                  title: Text(l10n.t(
+                      'Hide amounts (Privacy mask)', 'Összegek elrejtése')),
                   subtitle: Text(
                     l10n.t(
-                      'Masks balances on screens and the Android home-screen widget (••••)',
-                      'Elrejti az egyenlegeket a képernyőn és a kezdőképernyő widgeten (••••)',
+                      'Masks amounts in summaries and activity. Opening an editor reveals its values.',
+                      'Elrejti az összegeket az összesítésekben és tevékenységekben. A szerkesztő megnyitásakor az értékek láthatók.',
                     ),
                   ),
                   value: hideAmounts,
@@ -112,15 +110,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const Divider(height: 1),
                 SwitchListTile(
                   secondary: const Icon(Icons.fingerprint),
-                  title: Text(l10n.t('App Lock (Biometric / PIN)', 'Alkalmazászár (Ujjlenyomat / PIN)')),
+                  title: Text(l10n.t('App Lock (Biometric / PIN)',
+                      'Alkalmazászár (Ujjlenyomat / PIN)')),
                   subtitle: Text(
                     l10n.t(
-                      'Require fingerprint or device PIN when unlocking Duo Wallet',
-                      'Ujjlenyomat vagy PIN kód kérése megnyitáskor',
+                      'Unavailable: this demo does not enforce an application lock.',
+                      'Nem elérhető: a demó nem biztosít alkalmazászárat.',
                     ),
                   ),
-                  value: appLock,
-                  onChanged: (v) => ref.read(appLockEnabledProvider.notifier).state = v,
+                  value: false,
+                  onChanged: null,
                 ),
               ],
             ),
@@ -137,26 +136,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 12),
-                  SegmentedButton<ThemeMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        label: Text(l10n.t('System', 'Rendszer')),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        label: Text(l10n.t('Light', 'Világos')),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        label: Text(l10n.t('Dark', 'Sötét')),
-                      ),
-                    ],
-                    selected: {themeMode},
-                    onSelectionChanged: (s) {
-                      ref.read(themeModeProvider.notifier).state = s.first;
-                    },
-                  ),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    for (final choice in [
+                      (ThemeMode.system, l10n.t('System', 'Rendszer')),
+                      (ThemeMode.light, l10n.t('Light', 'Világos')),
+                      (ThemeMode.dark, l10n.t('Dark', 'Sötét'))
+                    ])
+                      ChoiceChip(
+                          label: Text(choice.$2),
+                          selected: themeMode == choice.$1,
+                          onSelected: (_) => ref
+                              .read(themeModeProvider.notifier)
+                              .state = choice.$1),
+                  ]),
                   const SizedBox(height: 16),
                   Text(
                     l10n.t(
@@ -171,20 +163,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     max: 100,
                     divisions: 20,
                     label: '$defaultSplit%',
-                    onChanged: (v) {
-                      if (hh == null) return;
-                      db.upsertHousehold(
-                        Household(
-                          id: hh.id,
-                          name: hh.name,
-                          baseCurrency: hh.baseCurrency,
-                          defaultSplitPct: v.round(),
-                          inviteCode: hh.inviteCode,
-                          emergencyFundMonths: hh.emergencyFundMonths,
-                          createdAt: hh.createdAt,
-                        ),
-                      );
-                    },
+                    onChanged: hh == null
+                        ? null
+                        : (v) {
+                            db.upsertHousehold(
+                              Household(
+                                id: hh.id,
+                                name: hh.name,
+                                baseCurrency: hh.baseCurrency,
+                                defaultSplitPct: v.round(),
+                                inviteCode: hh.inviteCode,
+                                emergencyFundMonths: hh.emergencyFundMonths,
+                                createdAt: hh.createdAt,
+                              ),
+                            );
+                          },
                   ),
                 ],
               ),
@@ -198,14 +191,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    l10n.t('Local Reminders & Alerts', 'Helyi értesítések és emlékeztetők'),
+                    l10n.t('Local Reminders & Alerts',
+                        'Helyi értesítések és emlékeztetők'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     l10n.t(
-                      'Evaluated locally after background sync (budget 50/80/100%, pending settlements, goal milestones).',
-                      'Szinkronizálás után helyben kiértékelt szabályok (keret 50/80/100%, függő elszámolás, célok).',
+                      'Checks local demo data when requested. These are previews, not scheduled notifications.',
+                      'Kérésre ellenőrzi a helyi demóadatokat. Ezek előnézetek, nem ütemezett értesítések.',
                     ),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -221,7 +215,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       });
                     },
                     icon: const Icon(Icons.notifications_active_outlined),
-                    label: Text(l10n.t('Check Alert Rules Now', 'Szabályok ellenőrzése most')),
+                    label: Text(l10n.t(
+                        'Check Alert Rules Now', 'Szabályok ellenőrzése most')),
                   ),
                   if (_evaluatedAlerts != null) ...[
                     const SizedBox(height: 8),
@@ -232,9 +227,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.notification_important_outlined),
+                          leading:
+                              const Icon(Icons.notification_important_outlined),
                           title: Text(l10n.isHu ? a.titleHu : a.titleEn),
-                          subtitle: Text(l10n.isHu ? a.bodyHu : a.bodyEn),
+                          subtitle: Text(hideAmounts
+                              ? l10n.t('Details hidden by privacy mask.',
+                                  'A részleteket az adatvédelmi maszk elrejti.')
+                              : (l10n.isHu ? a.bodyHu : a.bodyEn)),
                         ),
                   ],
                 ],
@@ -248,37 +247,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    l10n.t('In-App APK Updater (Sideload)', 'Alkalmazáson belüli APK frissítő'),
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manifest: ${Env.releaseManifestUrl}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _updaterStatus = Env.isConfigured
-                            ? l10n.t(
-                                'Up to date (v1.0.0+1 — signed with release keystore).',
-                                'Naprakész (v1.0.0+1 — kiadási kulccsal aláírva).',
-                              )
-                            : l10n.t(
-                                'Offline / Demo mode: v1.0.0+1 installed. Configure RELEASE_MANIFEST_URL to enable OTA APK updates.',
-                                'Offline / Demó mód: v1.0.0+1 telepítve.',
-                              );
-                      });
-                    },
-                    icon: const Icon(Icons.system_update_outlined),
-                    label: Text(l10n.t('Check for APK Updates', 'APK frissítés keresése')),
-                  ),
-                  if (_updaterStatus != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_updaterStatus!, style: Theme.of(context).textTheme.bodyMedium),
-                  ],
+                  Text(l10n.t('App updates', 'Alkalmazásfrissítések'),
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(l10n.t(
+                      'Install updates from the official Duo Wallet download page. Automatic update checking is not available in this version.',
+                      'A frissítéseket a Duo Wallet hivatalos letöltési oldaláról telepítheted. Ez a verzió még nem keres automatikusan frissítéseket.')),
                 ],
               ),
             ),
