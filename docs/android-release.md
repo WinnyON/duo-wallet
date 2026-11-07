@@ -1,3 +1,14 @@
+# Android v1.0.0-beta.2
+
+Replaces the Flutter launcher logo with original Duo Wallet artwork across Android launcher densities and adaptive icon masks. Version code 2, application ID `com.duowallet.app`, Android 8.0 and newer.
+
+- Release APK built successfully with the existing production configuration.
+- APK signature verified; certificate SHA-256 matches beta.1: `461e7e571415bb4e25d21c05ea062937a41a6f8721ae056b4340f64ac872c72c`.
+- APK SHA-256: `6945c8246eccd1334b8816a04318f0fa32daf8430b6e26bf6cb4d45d14459d99`.
+- Package metadata confirms version `1.0.0-beta.2` (2) and the adaptive launcher resource.
+- Physical-device installation and launcher appearance have not been checked.
+- Install over the signed beta.1 to retain app data. Existing beta limits below still apply.
+
 # Android v1.0.0-beta.1
 
 First signed beta APK for Android 8.0 (API 26) and newer. Version code 1, application ID `com.duowallet.app`. Install from the repository's GitHub Releases page. Allow installation from the browser or file manager used to open the download.
