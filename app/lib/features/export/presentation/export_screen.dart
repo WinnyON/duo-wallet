@@ -244,7 +244,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         const SizedBox(width: 12),
                         Expanded(child: Text(_status!)),
                       ])))),
-        DuoSection(
+        DuoCard(
+            padding: EdgeInsets.zero,
             child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -362,7 +363,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   ],
                 ))),
         const SizedBox(height: 12),
-        DuoSection(
+        DuoCard(
+            padding: EdgeInsets.zero,
             child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(

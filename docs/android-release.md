@@ -1,3 +1,13 @@
+# Android v1.0.0-beta.5
+
+Small separation refinement to beta.4. Restores visible section dividers (previously covered by opaque Material children), adds white bordered cards only around selected dense workflows, and outlines recurring-item Edit. The light palette, layouts and navigation are retained.
+
+- Analysis clean; 68 tests passed; one opt-in live-backend test skipped.
+- All 16 routes checked with narrow screens, enlarged English/Hungarian text, empty/extreme data and keyboard sheets. [Review and screenshots](ui-ux/separation-refinement.md).
+- Signed APK built with production configuration; version code 5, existing release signing certificate.
+- SHA-256: `3ad21139a72f80b1f5b9124424dcb43a1248d0b9b2962b3da12097726288c747`.
+- No backend data, Auth settings or sync behavior changed.
+
 # Android v1.0.0-beta.4
 
 Light-only UI redesign: white page and content surfaces, cobalt actions, navy text and restrained corner radii. Routine cards are replaced by unboxed sections and list rows. Home focuses on spending, settlement, accounts and recent transactions, with inline Add/Transfer actions that do not obscure balances. Dark-mode settings are removed.

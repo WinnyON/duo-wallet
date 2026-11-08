@@ -289,37 +289,38 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
                         '${money(entry.value.saved, entry.key)} / ${money(entry.value.target, entry.key)}',
                         style: Theme.of(context).textTheme.titleLarge)
                   ])),
-            DuoSection(
+            DuoCard(
+                padding: const EdgeInsets.all(16),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                  Text(l.emergencyFund,
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Text(history.isEmpty
-                      ? l.t(
-                          'Insufficient essential spending history. Mark essential categories and record expenses to calculate a target.',
-                          'Nincs elegendő alapvető kiadási adat. Jelöld az alapvető kategóriákat, és rögzíts kiadásokat a cél kiszámításához.')
-                      : l.t(
-                          'Suggested target: ${money(efTarget, CurrencyCode.huf)}',
-                          'Javasolt cél: ${money(efTarget, CurrencyCode.huf)}')),
-                  Text(l.t(
-                      'Uses essential categories in the selected scope, averaged over the last three complete months (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).',
-                      'A kiválasztott nézet alapvető kategóriáit használja az utolsó három teljes hónap átlagával (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).')),
-                  DropdownButtonFormField<int>(
-                      initialValue: _targetMonths,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                          labelText:
-                              l.t('Months to cover', 'Fedezendő hónapok')),
-                      items: [3, 6, 9, 12]
-                          .map((n) =>
-                              DropdownMenuItem(value: n, child: Text('$n')))
-                          .toList(),
-                      onChanged: (n) {
-                        if (n != null) setState(() => _targetMonths = n);
-                      }),
-                ])),
+                      Text(l.emergencyFund,
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(history.isEmpty
+                          ? l.t(
+                              'Insufficient essential spending history. Mark essential categories and record expenses to calculate a target.',
+                              'Nincs elegendő alapvető kiadási adat. Jelöld az alapvető kategóriákat, és rögzíts kiadásokat a cél kiszámításához.')
+                          : l.t(
+                              'Suggested target: ${money(efTarget, CurrencyCode.huf)}',
+                              'Javasolt cél: ${money(efTarget, CurrencyCode.huf)}')),
+                      Text(l.t(
+                          'Uses essential categories in the selected scope, averaged over the last three complete months (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).',
+                          'A kiválasztott nézet alapvető kategóriáit használja az utolsó három teljes hónap átlagával (${DateFormat.yMMMd(locale).format(start)} – ${DateFormat.yMMMd(locale).format(end.subtract(const Duration(days: 1)))}).')),
+                      DropdownButtonFormField<int>(
+                          initialValue: _targetMonths,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                              labelText:
+                                  l.t('Months to cover', 'Fedezendő hónapok')),
+                          items: [3, 6, 9, 12]
+                              .map((n) =>
+                                  DropdownMenuItem(value: n, child: Text('$n')))
+                              .toList(),
+                          onChanged: (n) {
+                            if (n != null) setState(() => _targetMonths = n);
+                          }),
+                    ])),
             if (goals.isEmpty)
               DuoSection(
                   child: Column(children: [

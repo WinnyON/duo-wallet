@@ -647,102 +647,110 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
               if (commonAccounts.isEmpty) emptyGroup(true),
               ...commonAccounts.map(accountCard),
               if (commonAccounts.isNotEmpty)
-                DuoSection(
+                DuoCard(
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                      Text(
-                          l10n.t('Common account · this month',
-                              'Közös számla · aktuális hónap'),
-                          style: textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      Text(l10n.t(
-                          'Flows use recorded HUF values. Opening and closing balances are grouped by account currency.',
-                          'A forgalom rögzített HUF értékeket használ. A nyitó és záró egyenlegek számlapénznemenként szerepelnek.')),
-                      const SizedBox(height: 8),
-                      Align(
-                          alignment: Alignment.centerLeft,
-                          child: FilledButton.tonalIcon(
-                              onPressed: myPersonalAccounts.isEmpty
-                                  ? null
-                                  : () => TransferSheet.show(context,
-                                      initialFromAccountId:
-                                          myPersonalAccounts.first.id,
-                                      initialToAccountId:
-                                          commonAccounts.first.id),
-                              icon: const Icon(Icons.add),
-                              label: Text(l10n.t('Record contribution',
-                                  'Befizetés rögzítése')))),
-                      if (myPersonalAccounts.isEmpty)
-                        Text(l10n.t(
-                            'Add a personal account to record a contribution.',
-                            'Befizetés rögzítéséhez hozz létre saját számlát.')),
-                      for (final profile in db.profiles)
-                        Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(children: [
-                                    Expanded(
-                                        child: Text(profile.displayName,
-                                            style: textTheme.titleSmall)),
-                                    if (profile.id == meId)
-                                      IconButton(
-                                          onPressed: () =>
-                                              _showEditPledgeDialog(
-                                                  context, db, profile),
-                                          tooltip: l10n.t('Edit monthly pledge',
-                                              'Havi vállalás szerkesztése'),
-                                          icon: const Icon(Icons.edit_outlined))
-                                  ]),
-                                  Text(
-                                      '${l10n.t('Recorded', 'Rögzített')}: ${Money(contributionsByUser[profile.id] ?? 0).format(locale: locale, hideAmounts: hideAmounts)}'),
-                                  Text(
-                                      '${l10n.t('Monthly pledge', 'Havi vállalás')}: ${Money(profile.monthlyCommonContributionMinor ?? 0).format(locale: locale, hideAmounts: hideAmounts)}'),
-                                  if ((profile.monthlyCommonContributionMinor ??
-                                          0) >
-                                      0) ...[
-                                    const SizedBox(height: 8),
-                                    DuoProgressBar(
-                                        progress: ((contributionsByUser[
-                                                        profile.id] ??
-                                                    0) /
+                          Text(
+                              l10n.t('Common account · this month',
+                                  'Közös számla · aktuális hónap'),
+                              style: textTheme.titleMedium),
+                          const SizedBox(height: 8),
+                          Text(l10n.t(
+                              'Flows use recorded HUF values. Opening and closing balances are grouped by account currency.',
+                              'A forgalom rögzített HUF értékeket használ. A nyitó és záró egyenlegek számlapénznemenként szerepelnek.')),
+                          const SizedBox(height: 8),
+                          Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.tonalIcon(
+                                  onPressed: myPersonalAccounts.isEmpty
+                                      ? null
+                                      : () => TransferSheet.show(context,
+                                          initialFromAccountId:
+                                              myPersonalAccounts.first.id,
+                                          initialToAccountId:
+                                              commonAccounts.first.id),
+                                  icon: const Icon(Icons.add),
+                                  label: Text(l10n.t('Record contribution',
+                                      'Befizetés rögzítése')))),
+                          if (myPersonalAccounts.isEmpty)
+                            Text(l10n.t(
+                                'Add a personal account to record a contribution.',
+                                'Befizetés rögzítéséhez hozz létre saját számlát.')),
+                          for (final profile in db.profiles)
+                            Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Row(children: [
+                                        Expanded(
+                                            child: Text(profile.displayName,
+                                                style: textTheme.titleSmall)),
+                                        if (profile.id == meId)
+                                          IconButton(
+                                              onPressed: () =>
+                                                  _showEditPledgeDialog(
+                                                      context, db, profile),
+                                              tooltip: l10n.t(
+                                                  'Edit monthly pledge',
+                                                  'Havi vállalás szerkesztése'),
+                                              icon: const Icon(
+                                                  Icons.edit_outlined))
+                                      ]),
+                                      Text(
+                                          '${l10n.t('Recorded', 'Rögzített')}: ${Money(contributionsByUser[profile.id] ?? 0).format(locale: locale, hideAmounts: hideAmounts)}'),
+                                      Text(
+                                          '${l10n.t('Monthly pledge', 'Havi vállalás')}: ${Money(profile.monthlyCommonContributionMinor ?? 0).format(locale: locale, hideAmounts: hideAmounts)}'),
+                                      if ((profile.monthlyCommonContributionMinor ??
+                                              0) >
+                                          0) ...[
+                                        const SizedBox(height: 8),
+                                        DuoProgressBar(
+                                            progress: ((contributionsByUser[
+                                                            profile.id] ??
+                                                        0) /
+                                                    profile
+                                                        .monthlyCommonContributionMinor!)
+                                                .clamp(0, 1),
+                                            color: duo.positive),
+                                        Text((contributionsByUser[profile.id] ??
+                                                    0) >=
                                                 profile
-                                                    .monthlyCommonContributionMinor!)
-                                            .clamp(0, 1),
-                                        color: duo.positive),
-                                    Text((contributionsByUser[profile.id] ??
-                                                0) >=
-                                            profile
-                                                .monthlyCommonContributionMinor!
-                                        ? l10n.t('Pledge reached',
-                                            'Vállalás teljesítve')
-                                        : l10n.t('Pledge in progress',
-                                            'Vállalás folyamatban'))
-                                  ],
-                                ])),
-                      const Divider(),
-                      Text(l10n.t('Common expenses', 'Közös kiadások')),
-                      Text(
-                          Money(commonExpensesMinor)
-                              .format(locale: locale, hideAmounts: hideAmounts),
-                          style: textTheme.titleLarge),
-                      const SizedBox(height: 12),
-                      Text(l10n.t('Common income', 'Közös bevételek')),
-                      Text(
-                          Money(commonIncomeMinor)
-                              .format(locale: locale, hideAmounts: hideAmounts),
-                          style: textTheme.titleLarge),
-                      const SizedBox(height: 12),
-                      Text(l10n.t(
-                          'Month opening balance', 'Hónap nyitó egyenlege')),
-                      Text(periodBalance(false), style: textTheme.titleLarge),
-                      const SizedBox(height: 12),
-                      Text(l10n.t('Month closing balance (recorded entries)',
-                          'Hónap záró egyenlege (rögzített tételek)')),
-                      Text(periodBalance(true), style: textTheme.titleLarge),
-                    ])),
+                                                    .monthlyCommonContributionMinor!
+                                            ? l10n.t('Pledge reached',
+                                                'Vállalás teljesítve')
+                                            : l10n.t('Pledge in progress',
+                                                'Vállalás folyamatban'))
+                                      ],
+                                    ])),
+                          const Divider(),
+                          Text(l10n.t('Common expenses', 'Közös kiadások')),
+                          Text(
+                              Money(commonExpensesMinor).format(
+                                  locale: locale, hideAmounts: hideAmounts),
+                              style: textTheme.titleLarge),
+                          const SizedBox(height: 12),
+                          Text(l10n.t('Common income', 'Közös bevételek')),
+                          Text(
+                              Money(commonIncomeMinor).format(
+                                  locale: locale, hideAmounts: hideAmounts),
+                              style: textTheme.titleLarge),
+                          const SizedBox(height: 12),
+                          Text(l10n.t('Month opening balance',
+                              'Hónap nyitó egyenlege')),
+                          Text(periodBalance(false),
+                              style: textTheme.titleLarge),
+                          const SizedBox(height: 12),
+                          Text(l10n.t(
+                              'Month closing balance (recorded entries)',
+                              'Hónap záró egyenlege (rögzített tételek)')),
+                          Text(periodBalance(true),
+                              style: textTheme.titleLarge),
+                        ])),
               const SizedBox(height: 20),
               Text(l10n.personalAccount, style: textTheme.titleMedium),
               Text(l10n.t(

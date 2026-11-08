@@ -1,7 +1,7 @@
 name: duo_wallet
 description: Offline-first private shared & personal finance app for two people.
 publish_to: 'none'
-version: 1.0.0-beta.4+4
+version: 1.0.0-beta.5+5
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

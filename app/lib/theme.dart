@@ -777,6 +777,7 @@ class DuoSection extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
       padding: margin,
       child: DecoratedBox(
+          position: DecorationPosition.foreground,
           decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: context.duo.hairline))),
           child: Material(

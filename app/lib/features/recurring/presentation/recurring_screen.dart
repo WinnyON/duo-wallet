@@ -502,7 +502,7 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
                   Text(
                       '${_frequency(l, rule.frequency)} • ${DateFormat.yMMMd(l.locale.languageCode).format(rule.nextDueOn)} • ${rule.autoCreate ? l.t("Active", "Aktív") : l.t("Paused", "Szünetel")}'),
                   Wrap(spacing: 8, children: [
-                    TextButton(
+                    OutlinedButton(
                         onPressed: () =>
                             _showAddRuleDialog(context, db, me, existing: rule),
                         child: Text(l.t('Edit', 'Szerkesztés'))),

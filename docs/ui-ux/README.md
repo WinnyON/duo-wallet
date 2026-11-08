@@ -1,3 +1,5 @@
+Latest: [beta.5 separation refinement](separation-refinement.md) restores visible rules and adds a few purposeful white cards, with [updated screenshots](separation-refinement/).
+
 The current light-only redesign is documented in [light-redesign.md](light-redesign.md), with [new screen captures](light-redesign/). Earlier before/after captures below are historical and show the superseded theme.
 
 # UI/UX evidence

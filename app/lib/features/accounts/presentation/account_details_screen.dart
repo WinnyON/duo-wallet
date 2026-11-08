@@ -82,41 +82,44 @@ class AccountDetailsScreen extends ConsumerWidget {
         body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
             children: [
-              DuoSection(
+              DuoCard(
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                    Text(
-                        '${accountTypeLabel(account.type, l10n)} · ${account.currency.code}',
-                        style: textTheme.titleMedium),
-                    const SizedBox(height: 12),
-                    Text(l10n.t('Recorded balance', 'Rögzített egyenleg')),
-                    Text(
-                        Money(balanceMinor, account.currency)
-                            .format(locale: locale, hideAmounts: hideAmounts),
-                        style: textTheme.headlineMedium),
-                    const SizedBox(height: 12),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      OutlinedButton.icon(
-                          onPressed: () => TransferSheet.show(context,
-                              initialFromAccountId: account.id),
-                          icon: const Icon(Icons.swap_horiz),
-                          label: Text(l10n.transfer)),
-                      FilledButton.icon(
-                          onPressed: () => AccountsScreen.showAccountDialog(
-                              context, db, meId, existing: account),
-                          icon: const Icon(Icons.edit_outlined),
-                          label: Text(
-                              l10n.t('Edit account', 'Számla szerkesztése'))),
-                      if (account.type == AccountType.investment)
-                        OutlinedButton.icon(
-                            onPressed: () => AccountsScreen.showValuationDialog(
-                                context, db, account),
-                            icon: const Icon(Icons.candlestick_chart_outlined),
-                            label: Text(l10n.t('Update valuation',
-                                'Értékbecslés frissítése'))),
-                    ]),
-                  ])),
+                        Text(
+                            '${accountTypeLabel(account.type, l10n)} · ${account.currency.code}',
+                            style: textTheme.titleMedium),
+                        const SizedBox(height: 12),
+                        Text(l10n.t('Recorded balance', 'Rögzített egyenleg')),
+                        Text(
+                            Money(balanceMinor, account.currency).format(
+                                locale: locale, hideAmounts: hideAmounts),
+                            style: textTheme.headlineMedium),
+                        const SizedBox(height: 12),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          OutlinedButton.icon(
+                              onPressed: () => TransferSheet.show(context,
+                                  initialFromAccountId: account.id),
+                              icon: const Icon(Icons.swap_horiz),
+                              label: Text(l10n.transfer)),
+                          FilledButton.icon(
+                              onPressed: () => AccountsScreen.showAccountDialog(
+                                  context, db, meId, existing: account),
+                              icon: const Icon(Icons.edit_outlined),
+                              label: Text(l10n.t(
+                                  'Edit account', 'Számla szerkesztése'))),
+                          if (account.type == AccountType.investment)
+                            OutlinedButton.icon(
+                                onPressed: () =>
+                                    AccountsScreen.showValuationDialog(
+                                        context, db, account),
+                                icon: const Icon(
+                                    Icons.candlestick_chart_outlined),
+                                label: Text(l10n.t('Update valuation',
+                                    'Értékbecslés frissítése'))),
+                        ]),
+                      ])),
               const SizedBox(height: 20),
               Text(
                   l10n.t('Account history (${linkedTxns.length})',

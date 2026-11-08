@@ -164,7 +164,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          DuoSection(
+          DuoCard(
+            padding: const EdgeInsets.all(16),
             child: Padding(
               padding: EdgeInsets.zero,
               child: Column(
