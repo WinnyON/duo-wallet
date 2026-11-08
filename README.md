@@ -6,7 +6,7 @@ Android finance app for two people, with English and Hungarian interfaces, share
 
 Download the APK from [GitHub Releases](https://github.com/WinnyON/duo-wallet/releases). The first version is a beta for Android 8.0 and newer. Open the downloaded APK and permit installation from your browser or file manager when Android asks. Future APKs must be signed with the same release key to update the installed app.
 
-Create an account with your email and a strong password, verify the email on the same phone, then create a household or join with your partner's invite code. Both partners use separate accounts. Shared expenses sync; personal records stay protected by database access policies. Confirmation and reset emails are configured by the backend operator.
+Create an account with your email and a password of at least 8 characters (no required symbols or capitals), verify the email on the same phone, then create a household or join with your partner's invite code. Both partners use separate accounts. Shared expenses sync; personal records stay protected by database access policies. Confirmation and reset emails are configured by the backend operator.
 
 Automated UI, privacy, authentication and storage checks pass. Physical-device verification and reset-link handling still need final validation. There is no automatic in-app updater or biometric app lock in this version. Install later versions from Releases.
 
@@ -25,7 +25,7 @@ Demo mode is explicit and isolated from production. A normal build with missing 
 
 ## Production configuration
 
-Copy `app/config/production.example.json` to the ignored `app/config/production.json` and supply your own Supabase URL and publishable client key. Configure verified-email authentication, strong passwords and custom SMTP in your own Supabase project. Never use a service-role key in an application build.
+Copy `app/config/production.example.json` to the ignored `app/config/production.json` and supply your own Supabase URL and publishable client key. Configure verified-email authentication, an 8-character password minimum with no forced character classes, and custom SMTP in your own Supabase project. Never use a service-role key in an application build.
 
 ```sh
 cd app

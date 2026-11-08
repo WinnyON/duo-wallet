@@ -1,3 +1,14 @@
+# Android v1.0.0-beta.3
+
+Simplifies signup and password recovery to one password entry, at least 8 characters, without forced character classes. Sign-in no longer applies signup strength rules. English and Hungarian guidance distinguishes rate limits, unconfirmed email, invalid credentials, server failures and connection timeouts. Signup success explains how existing users can sign in or reset their password.
+
+- Hosted password settings read back after updating: minimum 8, no forced character classes; email verification remains enabled.
+- Live disposable-user check: 8 lowercase letters accepted for login; 7-character signup rejected; test account removed without sending email.
+- Focused Auth UI and security tests: 11 passed. Flutter analysis: no issues.
+- Signed release APK built with existing production configuration. Physical-device install and inbox delivery remain unverified.
+- Version code 3; application ID `com.duowallet.app`; signing certificate unchanged from beta.1 and beta.2.
+- APK SHA-256: `b7c69d7547e23cd0f6412a548533c3af5ee81d06329d4c269b431c1aae6aafe1`.
+
 # Android v1.0.0-beta.2
 
 Replaces the Flutter launcher logo with original Duo Wallet artwork across Android launcher densities and adaptive icon masks. Version code 2, application ID `com.duowallet.app`, Android 8.0 and newer.

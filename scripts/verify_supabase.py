@@ -27,7 +27,7 @@ admin = config.get('SECRET_KEY') or config['SERVICE_ROLE_KEY']
 results = []
 users = []
 households = []
-password = 'Duo!aA9' + secrets.token_hex(12)
+password = secrets.token_hex(8)
 run = uuid.uuid4().hex[:12]
 
 
@@ -100,7 +100,7 @@ try:
     check('Anonymous database snapshot denied', denied('/rest/v1/rpc/duo_snapshot', {}))
     check('Email is required by Auth', denied('/auth/v1/signup', {'email': '', 'password': password}))
     check('Weak passwords rejected server-side', denied('/auth/v1/signup', {'email': f'weak-{run}@example.com', 'password': 'weak'}))
-    check('Missing password complexity rejected server-side', denied('/auth/v1/signup', {'email': f'weak2-{run}@example.com', 'password': 'a' * 16}))
+    check('Seven-character passwords rejected server-side', denied('/auth/v1/signup', {'email': f'weak2-{run}@example.com', 'password': 'seven77'}))
     unconfirmed_email = f'unconfirmed-{run}@example.com'
     _, unconfirmed = request('/auth/v1/admin/users', {'email': unconfirmed_email, 'password': password, 'email_confirm': False}, admin_request=True)
     users.append(unconfirmed['id'])

@@ -4,7 +4,7 @@ Duo Wallet uses the existing Supabase project `<PROJECT_REF>`. Its existing Auth
 
 ## Authentication and data protection
 
-Production requires a configured HTTPS Supabase endpoint and publishable client key. Unconfigured builds fail closed; demo data requires explicit `DUO_DEMO_MODE`. Verified email authentication gates financial screens. Signup and password recovery require at least 12 characters with uppercase, lowercase, digits and symbols. Supabase performs salted bcrypt password hashing on the server; the application never stores passwords. Email confirmation, secure password changes and email-change confirmation are enabled. Sessions and PKCE verifiers use device secure storage. Financial cache files use AES-GCM with fresh nonces and a per-user encryption key held in secure storage. Android backup is disabled.
+Production requires a configured HTTPS Supabase endpoint and publishable client key. Unconfigured builds fail closed; demo data requires explicit `DUO_DEMO_MODE`. Verified email authentication gates financial screens. Signup and password recovery require at least 8 characters, with no mandatory character classes. Sign-in only requires a nonempty password; it does not apply the current signup policy. Supabase performs salted bcrypt password hashing on the server; the application never stores passwords. Email confirmation, secure password changes and email-change confirmation are enabled. Sessions and PKCE verifiers use device secure storage. Financial cache files use AES-GCM with fresh nonces and a per-user encryption key held in secure storage. Android backup is disabled.
 
 Database RLS enforces household membership, private records, two-member households and participant-specific settlement confirmations. Membership and transaction identities cannot be changed by clients. Transaction shares are validated and saved atomically. Activity records are produced by server triggers. Scheduler functions are not callable by ordinary clients. Backups use a private Storage bucket with user-prefixed access policies. Sync preserves unacknowledged changes, retries failed writes and isolates users across session changes.
 
@@ -20,9 +20,13 @@ Final Flutter suite: 66 passed, one real-service opt-in test skipped in the defa
 - Backend unit checks cover encryption authentication, nonce variation, user/project separation, durable pending writes, stale-session guards and fail-closed configuration.
 - The final Android debug APK compiled using secure-storage 11.2.0; packaged files were scanned and the privileged service-role key was absent. Physical-device keystore, email-link and reset-link interaction still require device verification.
 
-## Email delivery: Gmail SMTP configured and tested
+## Email delivery: Gmail SMTP configured
 
-The owner selected Gmail instead of Resend because no sender domain is available. Live settings were read back from Supabase: `smtp.gmail.com`, port `465`, SMTP username and sender `<SMTP_SENDER_EMAIL>`, sender display name `Duo Wallet`. An SMTP credential is configured; its value was not printed or committed. Email confirmation remains enabled and minimum password length remains 12 with all required character classes.
+On November 8, a requested confirmation resend returned HTTP 200. A read-only account check found that the reported account was already confirmed and had previously signed in; its confirmation timestamp was empty. A resend response alone does not establish that an email was sent. Direct SMTP probing disconnected and hosted log queries were unavailable, so current end-to-end inbox delivery still needs confirmation. The app now explains the existing-account sign-in/reset path and distinguishes common Auth errors. A disposable confirmed account successfully signed in using eight lowercase letters; seven-character signup was rejected and the test account removed without sending email.
+
+### Previous release verification
+
+The owner selected Gmail instead of Resend because no sender domain is available. Live settings were read back from Supabase: `smtp.gmail.com`, port `465`, SMTP username and sender `<SMTP_SENDER_EMAIL>`, sender display name `Duo Wallet`. An SMTP credential is configured; its value was not printed or committed. Email confirmation remains enabled and minimum password length is now 8 with no forced character classes (verified against the hosted configuration).
 
 Both confirmation resend and password-reset requests returned HTTP 200 using a temporary `<DISPOSABLE_TEST_EMAIL>` test identity. The temporary Auth account was removed afterward. The owner confirmed receipt of both test emails. SMTP delivery is verified; real-account mobile callback interaction remains to be checked. Links in these disposable-account messages are not intended for use after cleanup.
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -64,7 +66,6 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _confirm = TextEditingController();
   bool _register = false, _busy = false, _showPassword = false;
   String? _status;
   bool _failed = false;
@@ -73,7 +74,6 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
   void dispose() {
     _email.dispose();
     _password.dispose();
-    _confirm.dispose();
     super.dispose();
   }
 
@@ -91,38 +91,80 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
         backend.recovery = false;
         await backend.retryLoad();
       } else if (_register) {
-        await auth.signUp(
-            email: _email.text.trim(),
-            password: _password.text,
-            emailRedirectTo: redirect);
+        await auth
+            .signUp(
+                email: _email.text.trim(),
+                password: _password.text,
+                emailRedirectTo: redirect)
+            .timeout(const Duration(seconds: 20));
         if (mounted) {
           setState(() {
             _failed = false;
             _status = AppLocalizations.of(context).t(
-                'Check your email to confirm your account, then sign in. No financial data is available before confirmation.',
-                'Erősítsd meg fiókodat az e-mailben kapott linken, majd jelentkezz be. Megerősítés előtt a pénzügyi adatok nem érhetők el.');
+                'Check your inbox and spam folder for a confirmation link. Already registered? Sign in, or use Forgot password to get back into your account.',
+                'Keresd a megerősítő linket a beérkező levelek és a spam között. Már regisztráltál? Jelentkezz be, vagy válaszd az Elfelejtetted a jelszavad? lehetőséget.');
           });
         }
       } else {
-        await auth.signInWithPassword(
-            email: _email.text.trim(), password: _password.text);
+        await auth
+            .signInWithPassword(
+                email: _email.text.trim(), password: _password.text)
+            .timeout(const Duration(seconds: 20));
       }
       if (mounted) {
         _password.clear();
-        _confirm.clear();
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _failed = true;
-          _status = AppLocalizations.of(context).t(
-              'Could not complete authentication. Check your details, email confirmation and connection, then retry. Use password reset if needed.',
-              'Nem sikerült a hitelesítés. Ellenőrizd az adatokat, az e-mail megerősítését és a kapcsolatot, majd próbáld újra. Szükség esetén kérj jelszó-visszaállítást.');
+          _status = _authError(error);
         });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _authError(Object error) {
+    final l = AppLocalizations.of(context);
+    final code = error is AuthException ? error.code : null;
+    if (code == 'over_email_send_rate_limit' ||
+        code == 'over_request_rate_limit' ||
+        (error is AuthException && error.statusCode == '429')) {
+      return l.t(
+          'Too many attempts. Wait a minute before trying again. If emails still do not arrive, contact support.',
+          'Túl sok próbálkozás. Várj egy percet, majd próbáld újra. Ha továbbra sem érkezik e-mail, kérj segítséget.');
+    }
+    if (code == 'email_not_confirmed') {
+      return l.t(
+          'Confirm your email first. Check spam, or tap Resend confirmation email.',
+          'Előbb erősítsd meg az e-mail-címed. Nézd meg a spam mappát, vagy kérj új megerősítő e-mailt.');
+    }
+    if (code == 'invalid_credentials') {
+      return l.t(
+          'Email or password is incorrect. Try again or reset your password.',
+          'Hibás e-mail-cím vagy jelszó. Próbáld újra, vagy állítsd vissza a jelszavad.');
+    }
+    if (code == 'weak_password') {
+      return l.t(
+          'This password was rejected. Use at least 8 characters or try a different password.',
+          'A jelszót a rendszer elutasította. Használj legalább 8 karaktert, vagy válassz másik jelszót.');
+    }
+    if (code == 'unexpected_failure' ||
+        (error is AuthException && error.statusCode == '500')) {
+      return l.t(
+          'The server could not complete the request. Email delivery may be unavailable. Please try again later.',
+          'A szerver nem tudta teljesíteni a kérést. Az e-mail-küldés nem biztos, hogy elérhető. Próbáld újra később.');
+    }
+    if (error is TimeoutException) {
+      return l.t(
+          'The request timed out. Check your connection. If you requested an email, check your inbox before retrying.',
+          'A kérés túllépte az időkorlátot. Ellenőrizd a kapcsolatot. Ha e-mailt kértél, újabb próbálkozás előtt nézd meg a beérkező leveleket.');
+    }
+    return l.t(
+        'Could not connect. Check your internet connection and try again.',
+        'Nem sikerült kapcsolódni. Ellenőrizd az internetkapcsolatot, majd próbáld újra.');
   }
 
   Future<void> _reset({bool confirmation = false}) async {
@@ -162,12 +204,11 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
                   : 'Ha a cím regisztrálva van, hamarosan jelszó-visszaállító e-mailt kapsz. A linket ezen az eszközön nyisd meg.');
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _failed = true;
-          _status = l.t('Could not request reset. Try again when connected.',
-              'Nem sikerült visszaállítást kérni. Próbáld újra kapcsolódás után.');
+          _status = _authError(error);
         });
       }
     } finally {
@@ -242,6 +283,13 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
                                           decoration: InputDecoration(
                                               labelText:
                                                   l.t('Password', 'Jelszó'),
+                                              helperText: widget.recovery ||
+                                                      _register
+                                                  ? l.t(
+                                                      'At least 8 characters. No special characters required.',
+                                                      'Legalább 8 karakter. Különleges karakter nem szükséges.')
+                                                  : null,
+                                              helperMaxLines: 3,
                                               errorMaxLines: 4,
                                               suffixIcon: IconButton(
                                                   tooltip: l.t(
@@ -250,32 +298,21 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
                                                   onPressed: () => setState(
                                                       () => _showPassword =
                                                           !_showPassword),
-                                                  icon: Icon(_showPassword
-                                                      ? Icons.visibility_off
-                                                      : Icons.visibility))),
-                                          validator: (v) => isStrongPassword(v ?? '')
-                                              ? null
-                                              : l.t(
-                                                  'Use at least 12 characters with uppercase, lowercase, a number and a symbol; at most 72 UTF-8 bytes.',
-                                                  'Legalább 12 karakter, kis- és nagybetű, szám és szimbólum szükséges; legfeljebb 72 UTF-8 bájt.')),
-                                      if (widget.recovery || _register) ...[
-                                        const SizedBox(height: 16),
-                                        TextFormField(
-                                            controller: _confirm,
-                                            enabled: !_busy,
-                                            obscureText: true,
-                                            autocorrect: false,
-                                            enableSuggestions: false,
-                                            decoration: InputDecoration(
-                                                labelText: l.t(
-                                                    'Confirm password',
-                                                    'Jelszó megerősítése')),
-                                            validator: (v) => v ==
-                                                    _password.text
+                                                  icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility))),
+                                          validator: (v) {
+                                            if (!(widget.recovery ||
+                                                _register)) {
+                                              return (v ?? '').isNotEmpty
+                                                  ? null
+                                                  : l.t('Enter your password.',
+                                                      'Add meg a jelszavad.');
+                                            }
+                                            return isStrongPassword(v ?? '')
                                                 ? null
-                                                : l.t('Passwords must match.',
-                                                    'A jelszavaknak egyezniük kell.')),
-                                      ],
+                                                : l.t(
+                                                    'Use at least 8 characters. Very long passwords may need to be shortened.',
+                                                    'Legalább 8 karakter szükséges. A nagyon hosszú jelszót rövidítsd le.');
+                                          }),
                                       const SizedBox(height: 20),
                                       FilledButton(
                                           onPressed: _busy ? null : _submit,
@@ -311,7 +348,6 @@ class _EmailAuthScreenState extends ConsumerState<EmailAuthScreen> {
                                         _register = !_register;
                                         _status = null;
                                         _password.clear();
-                                        _confirm.clear();
                                         _form.currentState?.reset();
                                       }),
                               child: Text(_register

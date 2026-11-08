@@ -57,14 +57,15 @@ void main() {
     }
     expect(isStrongPassword('Example-Strong-Password9'), isTrue);
     for (final s in [
-      '',
-      'shortA1!',
+      'abcdefgh',
       'longlowercaseonly123!',
       'LONGUPPERCASE123!',
       'NoNumbersHere!',
-      'NoSymbolsHere123',
-      'A1!${'é' * 40}'
+      'NoSymbolsHere123'
     ]) {
+      expect(isStrongPassword(s), isTrue);
+    }
+    for (final s in ['', 'shortA1', 'A1!${'é' * 40}']) {
       expect(isStrongPassword(s), isFalse, reason: s);
     }
   });

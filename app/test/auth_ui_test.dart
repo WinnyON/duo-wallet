@@ -51,6 +51,10 @@ void main() {
         final fields = find.byType(TextFormField);
         await tester.enterText(fields.first, 'not-an-email');
         await tester.enterText(fields.at(1), 'weak');
+        expect(tester.widget<TextFormField>(fields.at(1)).validator!('weak'),
+            isNull);
+        expect(tester.widget<TextFormField>(fields.at(1)).validator!(''),
+            isNotNull);
         await tapAuthButton(
             tester,
             find.widgetWithText(
@@ -66,24 +70,25 @@ void main() {
             tester,
             find.widgetWithText(TextButton,
                 locale == 'en' ? 'Create an account' : 'Fiók létrehozása'));
-        expect(find.byType(TextFormField), findsNWidgets(3));
+        expect(find.byType(TextFormField), findsNWidgets(2));
+        final passwordField =
+            tester.widget<TextFormField>(find.byType(TextFormField).last);
+        expect(passwordField.validator!('abcdefgh'), isNull);
+        expect(passwordField.validator!('abcdefg'), isNotNull);
         expect(tester.takeException(), isNull);
         backend.recovery = true;
         backend.notifyListeners();
         await tester.pumpAndSettle();
-        expect(find.byType(TextFormField), findsNWidgets(2));
-        await tester.enterText(
-            find.byType(TextFormField).first, 'Example-Strong-Password9');
-        await tester.enterText(
-            find.byType(TextFormField).last, 'Different-Password9');
+        expect(find.byType(TextFormField), findsNWidgets(1));
+        await tester.enterText(find.byType(TextFormField).first, 'short');
         await tapAuthButton(
             tester,
             find.widgetWithText(FilledButton,
                 locale == 'en' ? 'Save password' : 'Jelszó mentése'));
         expect(
             find.text(locale == 'en'
-                ? 'Passwords must match.'
-                : 'A jelszavaknak egyezniük kell.'),
+                ? 'Use at least 8 characters. Very long passwords may need to be shortened.'
+                : 'Legalább 8 karakter szükséges. A nagyon hosszú jelszót rövidítsd le.'),
             findsOneWidget);
         expect(tester.takeException(), isNull);
       } finally {
