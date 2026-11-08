@@ -7,6 +7,7 @@ import '../../../core/domain/views.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/money.dart';
 import '../../../router.dart';
+import '../../../theme.dart';
 import '../../transactions/presentation/transactions_screen.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -146,7 +147,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ],
                 onChanged: (v) => setState(() => _category = v)),
             const SizedBox(height: 12),
-            Card(
+            DuoSection(
                 child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -170,10 +171,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         child: Text(l.t('Clear filters', 'Szűrők törlése'))),
                   ])),
             for (final t in rows)
-              Card(
+              DuoSection(
                   child: InkWell(
                       onTap: () => showTransactionDetails(context, t),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(8),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

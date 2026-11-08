@@ -4,14 +4,11 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/db/tables/tables.dart';
 import 'core/l10n/generated/app_localizations.dart';
 
 import 'core/money/currency.dart';
 import 'core/money/money.dart';
-
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 
 /// Plain decimal input only; grouped and mixed-separator values are ambiguous.
 double? parsePositiveAmount(String text, {bool allowZero = false}) {
@@ -106,7 +103,7 @@ class DuoColors extends ThemeExtension<DuoColors> {
     required this.icon,
     required this.accent,
     required this.well,
-    this.heroSurface = const Color(0xFFFF385C),
+    this.heroSurface = const Color(0xFF102A56),
     this.onHeroSurface = const Color(0xFFFFFFFF),
   });
 
@@ -198,64 +195,30 @@ class _Palette {
   final Color positive, negative, negativeContainer, warning, info;
   final Color icon, accent, primaryBrand;
 
-  // Exact User-Provided Airbnb Palette:
-  // Primary Brand & Logo Colors:
-  // - Rausch (#FF5A5F / RGB: 255, 90, 95) — Coral-pink brand identity
-  // - Radical Red (#FF385C / RGB: 255, 56, 92) — Vibrant reddish-pink CTAs & active states
-  // Secondary & Accent Colors:
-  // - Babu (#00A699 / RGB: 0, 166, 153) — Teal accent for secondary, maps, success states
-  // - Arches (#FC642D / RGB: 252, 100, 45) — Warm orange-red for badges & highlights
-  // Neutral & UI Colors:
-  // - Mine Shaft / Black (#222222 / RGB: 34, 34, 34) — Primary text
-  // - Hof / Dark Gray (#484848 / RGB: 72, 72, 72) — Headings & interface elements/icons
-  // - Foggy / Secondary Gray (#767676 / RGB: 118, 118, 118) — Secondary text & descriptions
-  // - White (#FFFFFF / RGB: 255, 255, 255) — Clean background surface color
   static const light = _Palette(
     brightness: Brightness.light,
-    bg: Color(
-        0xFFF7F7F7), // Soft canvas so #FFFFFF cards & input fields stand out
-    surface: Color(0xFFFFFFFF), // White (#FFFFFF) clean surface color
-    fill: Color(0xFFF1F1F1), // Subtle nested well
-    hairline: Color(0xFFEBEBEB),
-    outline: Color(0xFFB0B0B0), // Clear visible border for input boxes
-    ink: Color(0xFF222222), // Mine Shaft / Black (#222222)
-    muted: Color(0xFF626262), // Foggy / Secondary Gray (#767676)
-    positive: Color(0xFF00766D), // Babu Teal (#00A699)
-    negative: Color(0xFFBF2345), // Radical Red (#FF385C)
-    negativeContainer: Color(0xFFFFE5EA),
-    warning: Color(0xFFAC420F), // Arches Orange-Red (#FC642D)
-    info: Color(0xFF00766D), // Babu Teal (#00A699)
-    icon: Color(0xFF484848), // Hof / Dark Gray (#484848)
-    accent: Color(0xFFFF5A5F), // Rausch Coral-Pink (#FF5A5F)
-    primaryBrand: Color(0xFFBF2345), // Radical Red (#FF385C)
-  );
-
-  static const dark = _Palette(
-    brightness: Brightness.dark,
-    bg: Color(0xFF141414),
-    surface: Color(0xFF222222), // Mine Shaft dark surface
-    fill: Color(0xFF2C2C2C),
-    hairline: Color(0xFF383838),
-    outline: Color(0xFF767676), // Foggy border
-    ink: Color(0xFFFFFFFF), // White text
-    muted: Color(0xFFB0B0B0),
-    positive: Color(0xFF4FD1BE), // Babu Teal (#00A699)
-    negative: Color(0xFFFF5A5F), // Rausch (#FF5A5F)
-    negativeContainer: Color(0xFF421820),
-    warning: Color(0xFFFC642D), // Arches (#FC642D)
-    info: Color(0xFF4FD1BE), // Babu (#00A699)
-    icon: Color(0xFFE2E2E2), // Rausch (#FF5A5F)
-    accent: Color(0xFFFF5A5F), // Rausch (#FF5A5F)
-    primaryBrand: Color(0xFFFF8FA4), // Radical Red (#FF385C)
+    bg: Color(0xFFFFFFFF),
+    surface: Color(0xFFFFFFFF),
+    fill: Color(0xFFFFFFFF),
+    hairline: Color(0xFFDCE2EB),
+    outline: Color(0xFF778496),
+    ink: Color(0xFF142033),
+    muted: Color(0xFF475569),
+    positive: Color(0xFF087443),
+    negative: Color(0xFFC62828),
+    negativeContainer: Color(0xFFFFF1F0),
+    warning: Color(0xFF9A4A00),
+    info: Color(0xFF1645D8),
+    icon: Color(0xFF26364D),
+    accent: Color(0xFF1645D8),
+    primaryBrand: Color(0xFF1645D8),
   );
 }
 
 class AppTheme {
   static ThemeData light() => _build(_Palette.light);
-  static ThemeData dark() => _build(_Palette.dark);
 
   static ThemeData _build(_Palette p) {
-    final isDark = p.brightness == Brightness.dark;
     final hairline = BorderSide(color: p.hairline);
     final text = _textTheme(p);
 
@@ -266,16 +229,16 @@ class AppTheme {
 
     final scheme = ColorScheme(
       brightness: p.brightness,
-      primary: p.primaryBrand, // Radical Red #FF385C
-      onPrimary: isDark ? p.bg : Colors.white,
-      primaryContainer: p.primaryBrand.withValues(alpha: 0.12),
+      primary: p.primaryBrand,
+      onPrimary: Colors.white,
+      primaryContainer: p.surface,
       onPrimaryContainer: p.primaryBrand,
-      secondary: p.positive, // Babu #00A699
-      onSecondary: isDark ? p.bg : Colors.white,
-      secondaryContainer: p.positive.withValues(alpha: 0.14),
-      onSecondaryContainer: isDark ? Colors.white : const Color(0xFF007A70),
-      tertiary: p.warning, // Arches #FC642D
-      onTertiary: isDark ? p.bg : Colors.white,
+      secondary: p.primaryBrand,
+      onSecondary: Colors.white,
+      secondaryContainer: p.surface,
+      onSecondaryContainer: p.primaryBrand,
+      tertiary: p.warning,
+      onTertiary: Colors.white,
       error: p.negative,
       onError: Colors.white,
       errorContainer: p.negativeContainer,
@@ -323,7 +286,7 @@ class AppTheme {
           icon: p.icon,
           accent: p.accent,
           well: p.fill,
-          heroSurface: const Color(0xFFBF2345),
+          heroSurface: const Color(0xFF102A56),
           onHeroSurface: Colors.white,
         ),
       ],
@@ -341,10 +304,9 @@ class AppTheme {
         titleTextStyle: text.titleLarge?.copyWith(
           fontSize: 20,
           letterSpacing: -0.5,
-          color: isDark ? p.ink : const Color(0xFF484848),
+          color: p.ink,
         ),
-        systemOverlayStyle:
-            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
       cardTheme: CardThemeData(
         color: p.surface,
@@ -353,14 +315,14 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         margin: const EdgeInsets.symmetric(vertical: 6),
         clipBehavior: Clip.antiAlias,
-        shape: rounded(20, hairline),
+        shape: rounded(8, hairline),
       ),
       listTileTheme: ListTileThemeData(
         iconColor: p.icon,
         textColor: p.ink,
         selectedColor: p.primaryBrand,
         selectedTileColor: p.primaryBrand.withValues(alpha: 0.08),
-        shape: rounded(12),
+        shape: rounded(8),
         titleTextStyle: text.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
         subtitleTextStyle: text.bodyMedium?.copyWith(color: p.muted),
         leadingAndTrailingTextStyle:
@@ -371,7 +333,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         height: 58,
-        indicatorColor: p.primaryBrand.withValues(alpha: 0.12),
+        indicatorColor: p.surface,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         iconTheme: WidgetStateProperty.resolveWith(
           (s) => IconThemeData(
@@ -387,7 +349,7 @@ class AppTheme {
         width: 304,
         scrimColor: Colors.black.withValues(alpha: 0.35),
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.horizontal(right: Radius.circular(20)),
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(12)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -395,8 +357,10 @@ class AppTheme {
           backgroundColor: p.primaryBrand,
           foregroundColor: scheme.onPrimary,
           minimumSize: const Size(64, 48),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          shape: rounded(12),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          visualDensity: VisualDensity.standard,
+          tapTargetSize: MaterialTapTargetSize.padded,
+          shape: rounded(8),
           textStyle: text.labelLarge,
           elevation: 0,
         ),
@@ -405,79 +369,101 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: p.ink,
           minimumSize: const Size(64, 48),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          visualDensity: VisualDensity.standard,
+          tapTargetSize: MaterialTapTargetSize.padded,
           side: BorderSide(color: p.ink, width: 1.2),
-          shape: rounded(12),
+          shape: rounded(8),
           textStyle: text.labelLarge,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: p.primaryBrand,
-          shape: rounded(12),
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          visualDensity: VisualDensity.standard,
+          tapTargetSize: MaterialTapTargetSize.padded,
+          shape: rounded(8),
           textStyle: text.labelLarge,
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: p.primaryBrand,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(64, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: rounded(8),
+          textStyle: text.labelLarge,
+          elevation: 0,
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        shape: rounded(8),
+      )),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: p.primaryBrand,
         foregroundColor: scheme.onPrimary,
-        elevation: 3,
-        focusElevation: 3,
-        hoverElevation: 4,
-        highlightElevation: 1,
-        shape: rounded(16),
+        elevation: 0,
+        focusElevation: 0,
+        hoverElevation: 0,
+        highlightElevation: 0,
+        shape: rounded(8),
         extendedTextStyle:
             text.labelLarge?.copyWith(fontSize: 15, color: scheme.onPrimary),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF),
+        fillColor: p.surface,
         floatingLabelBehavior: FloatingLabelBehavior.always,
         contentPadding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: p.outline, width: 1.2),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: p.outline, width: 1.2),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: p.primaryBrand, width: 2.0),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: p.negative, width: 1.2),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: p.negative, width: 2.0),
         ),
         labelStyle: TextStyle(
-          color: isDark ? p.muted : const Color(0xFF484848),
+          color: p.muted,
           fontSize: 14,
           fontWeight: FontWeight.w500,
         ),
         floatingLabelStyle: TextStyle(
-          color: isDark ? p.ink : const Color(0xFF484848),
+          color: p.ink,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
         hintStyle: TextStyle(color: p.muted, fontSize: 14),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor:
-            isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFFFFFF),
-        selectedColor: p.primaryBrand.withValues(alpha: 0.14),
-        checkmarkColor: p.primaryBrand,
+        backgroundColor: p.surface,
+        selectedColor: p.primaryBrand,
+        checkmarkColor: Colors.white,
         side: BorderSide(color: p.outline, width: 1.0),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         labelPadding: const EdgeInsets.symmetric(horizontal: 4),
         labelStyle: text.labelMedium?.copyWith(
-          color: p.ink,
-          fontWeight: FontWeight.w500,
+          color: WidgetStateColor.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? Colors.white : p.ink),
+          fontWeight: FontWeight.w600,
         ),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
@@ -485,7 +471,7 @@ class AppTheme {
           animationDuration: const Duration(milliseconds: 150),
           visualDensity: VisualDensity.compact,
           side: WidgetStatePropertyAll(BorderSide(color: p.outline)),
-          shape: WidgetStatePropertyAll(rounded(12)),
+          shape: WidgetStatePropertyAll(rounded(8)),
           textStyle: WidgetStatePropertyAll(text.labelLarge),
           backgroundColor: WidgetStateProperty.resolveWith(
             (s) =>
@@ -512,14 +498,14 @@ class AppTheme {
         modalBarrierColor: Colors.black.withValues(alpha: 0.4),
         clipBehavior: Clip.antiAlias,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: p.bg,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        shape: rounded(20, hairline),
+        shape: rounded(8, hairline),
         titleTextStyle: text.titleLarge,
         contentTextStyle: text.bodyMedium,
       ),
@@ -529,14 +515,14 @@ class AppTheme {
         contentTextStyle: text.bodyMedium?.copyWith(color: p.surface),
         actionTextColor: p.accent,
         elevation: 2,
-        shape: rounded(12),
+        shape: rounded(8),
         insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: p.primaryBrand,
-        linearTrackColor: p.fill,
+        linearTrackColor: p.hairline,
         linearMinHeight: 6,
-        borderRadius: BorderRadius.circular(99),
+        borderRadius: BorderRadius.circular(4),
         circularTrackColor: Colors.transparent,
       ),
       dividerTheme: DividerThemeData(color: p.hairline, thickness: 1, space: 1),
@@ -550,8 +536,8 @@ class AppTheme {
         color: p.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: isDark ? 0.6 : 0.14),
-        shape: rounded(12, hairline),
+        shadowColor: Colors.black.withValues(alpha: 0.14),
+        shape: rounded(8, hairline),
         textStyle: text.bodyMedium,
       ),
     );
@@ -682,8 +668,7 @@ class _PressableState extends State<Pressable> {
   }
 }
 
-/// Compact status/delta pill without Material Chip's heavy 32px minimum height.
-/// Positive pills render as solid Forest Pine (#013328) with Warm Sand (#E3DCD2) text.
+/// Compact status tag; functional colors carry meaning.
 typedef DuoPill = DuoBadge;
 
 class DuoBadge extends StatelessWidget {
@@ -703,8 +688,7 @@ class DuoBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final duo = context.duo;
-    final isPositiveSolid =
-        solid || (backgroundColor == null && color == const Color(0xFF00A699));
+    final isPositiveSolid = solid;
     final bg = backgroundColor ??
         (isPositiveSolid
             ? (color ?? duo.positive)
@@ -718,7 +702,7 @@ class DuoBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(99),
+        borderRadius: BorderRadius.circular(4),
         border: isPositiveSolid
             ? null
             : Border.all(
@@ -739,116 +723,88 @@ class DuoBadge extends StatelessWidget {
   }
 }
 
-/// Borderless lifted card with radius 24, soft multi-layer shadow in light mode,
-/// optional hero Deep Forest Pine surface (#013328), and optional Pressable tap.
+/// A contained summary; ordinary content belongs in a [DuoSection].
 class DuoCard extends StatelessWidget {
-  const DuoCard({
-    super.key,
-    required this.child,
-    this.padding = const EdgeInsets.all(20),
-    this.margin = const EdgeInsets.symmetric(vertical: 6),
-    this.isHero = false,
-    this.onTap,
-    this.color,
-  });
-
+  const DuoCard(
+      {super.key,
+      required this.child,
+      this.padding = const EdgeInsets.all(20),
+      this.margin = const EdgeInsets.symmetric(vertical: 8),
+      this.isHero = false,
+      this.onTap,
+      this.color});
   final Widget child;
-  final EdgeInsetsGeometry padding;
-  final EdgeInsetsGeometry margin;
+  final EdgeInsetsGeometry padding, margin;
   final bool isHero;
   final VoidCallback? onTap;
   final Color? color;
-
   @override
   Widget build(BuildContext context) {
     final duo = context.duo;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final highContrast = MediaQuery.highContrastOf(context);
-    final bg = color ??
-        (isHero ? duo.heroSurface : Theme.of(context).colorScheme.surface);
-
-    Widget inner = Padding(padding: padding, child: child);
+    Widget content = Padding(padding: padding, child: child);
     if (isHero) {
-      inner = DefaultTextStyle.merge(
-        style: TextStyle(color: duo.onHeroSurface),
-        child: IconTheme.merge(
-          data: IconThemeData(color: duo.onHeroSurface),
-          child: inner,
-        ),
-      );
+      content = DefaultTextStyle.merge(
+          style: TextStyle(color: duo.onHeroSurface),
+          child: IconTheme.merge(
+              data: IconThemeData(color: duo.onHeroSurface), child: content));
     }
-
-    Widget box = Container(
-      margin: margin,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-        border: highContrast ? Border.all(color: duo.hairline) : null,
-        boxShadow: isDark
-            ? const [
-                BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 20,
-                  offset: Offset(0, 6),
-                ),
-              ]
-            : const [
-                BoxShadow(
-                  color: Color(0x0A100C0D),
-                  blurRadius: 24,
-                  offset: Offset(0, 8),
-                ),
-                BoxShadow(
-                  color: Color(0x08100C0D),
-                  blurRadius: 2,
-                  offset: Offset(0, 1),
-                ),
-              ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        type: MaterialType.transparency,
-        child: inner,
-      ),
-    );
-
-    if (onTap != null) {
-      box = Pressable(onTap: onTap, child: box);
-    }
-    return box;
+    return Padding(
+        padding: margin,
+        child: Material(
+          color: color ?? (isHero ? duo.heroSurface : Colors.white),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: isHero ? BorderSide.none : BorderSide(color: duo.hairline)),
+          clipBehavior: Clip.antiAlias,
+          child:
+              onTap == null ? content : InkWell(onTap: onTap, child: content),
+        ));
   }
 }
 
-/// Nested rounded well container for secondary pairs (e.g. My Total / Individual) inside a card.
-class DuoWell extends StatelessWidget {
-  const DuoWell({
-    super.key,
-    required this.child,
-    this.padding = const EdgeInsets.all(14),
-    this.color,
-    this.borderRadius = 18,
-  });
+/// An unboxed section or list row, separated by space and a single rule.
+class DuoSection extends StatelessWidget {
+  const DuoSection(
+      {super.key,
+      required this.child,
+      this.padding = const EdgeInsets.symmetric(vertical: 16),
+      this.margin = EdgeInsets.zero,
+      this.onTap});
+  final Widget child;
+  final EdgeInsetsGeometry padding, margin;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: margin,
+      child: DecoratedBox(
+          decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: context.duo.hairline))),
+          child: Material(
+              color: Colors.white,
+              child: InkWell(
+                  onTap: onTap,
+                  child: Padding(padding: padding, child: child)))));
+}
 
+/// Related secondary values share the page surface, without a nested tile.
+class DuoWell extends StatelessWidget {
+  const DuoWell(
+      {super.key,
+      required this.child,
+      this.padding = const EdgeInsets.symmetric(vertical: 12),
+      this.color,
+      this.borderRadius = 0});
   final Widget child;
   final EdgeInsetsGeometry padding;
   final Color? color;
   final double borderRadius;
-
   @override
-  Widget build(BuildContext context) {
-    final duo = context.duo;
-    return Container(
+  Widget build(BuildContext context) => Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: color ?? duo.well,
-        borderRadius: BorderRadius.circular(borderRadius),
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: child,
-      ),
-    );
-  }
+          color: color ?? Colors.white,
+          borderRadius: BorderRadius.circular(borderRadius)),
+      child: child);
 }
 
 /// Formats a [Money] value with large bold main digits (tight -0.03em tracking,
@@ -1038,8 +994,7 @@ class DuoSectionHeader extends StatelessWidget {
   }
 }
 
-/// Semicircular 240°–270° arc gauge with rounded stroke caps, track in [DuoColors.well],
-/// and active arc sweeping from Deep Forest Pine (#013328) to Terracotta (#CC8B65).
+/// Semicircular progress gauge with a single functional accent color.
 class DuoGauge extends StatelessWidget {
   const DuoGauge({
     super.key,
@@ -1071,9 +1026,9 @@ class DuoGauge extends StatelessWidget {
             painter: _DuoGaugePainter(
               progress: clamped,
               strokeWidth: strokeWidth,
-              trackColor: trackColor ?? duo.well,
-              startColor: const Color(0xFF00A699),
-              endColor: const Color(0xFFFF385C),
+              trackColor: trackColor ?? duo.hairline,
+              startColor: duo.info,
+              endColor: duo.info,
             ),
           ),
           if (child != null)
@@ -1318,7 +1273,7 @@ class DuoProgressBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final duo = context.duo;
     final barColor = color ?? duo.positive;
-    final trackColor = backgroundColor ?? duo.well;
+    final trackColor = backgroundColor ?? duo.hairline;
     final clamped = progress.clamp(0.0, 1.0);
 
     return Container(

@@ -149,7 +149,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
           Column(
             children: [
               SizedBox(
-                child: Card(
+                child: DuoSection(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -191,7 +191,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
               ),
               const SizedBox(width: 12),
               SizedBox(
-                child: Card(
+                child: DuoSection(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -245,7 +245,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
           ),
           const SizedBox(height: 8),
           if (savingsAccounts.isEmpty)
-            Card(
+            DuoSection(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
@@ -273,7 +273,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
                   months: 12,
                   taxPct: a.interestTaxPct,
                 );
-                return Card(
+                return DuoSection(
                   margin: const EdgeInsets.only(bottom: 10),
                   child: ListTile(
                     leading: MerchantAvatar(
@@ -303,7 +303,7 @@ class _SavingsScreenState extends ConsumerState<SavingsScreen> {
           const SizedBox(height: 16),
 
           // Standalone Interest Calculator
-          Card(
+          DuoSection(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

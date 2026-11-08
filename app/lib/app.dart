@@ -16,7 +16,6 @@ class DuoWalletApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final localeCode = ref.watch(appLocaleProvider);
-    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
       title: 'Duo Wallet',
@@ -28,8 +27,7 @@ class DuoWalletApp extends ConsumerWidget {
           : child!,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: themeMode,
+      themeMode: ThemeMode.light,
       locale: Locale(localeCode),
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [

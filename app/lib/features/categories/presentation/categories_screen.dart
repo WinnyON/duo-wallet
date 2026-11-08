@@ -202,7 +202,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                       : l.t('Add a category to organize your spending.',
                           'Adj hozzá kategóriát a kiadások rendszerezéséhez.'))),
             for (var i = 0; i < cats.length; i++)
-              Card(
+              DuoSection(
                   child: ListTile(
                 leading: const Icon(Icons.category_outlined),
                 title: Text(cats[i].localizedName(l.locale.languageCode)),

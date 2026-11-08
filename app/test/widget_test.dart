@@ -19,8 +19,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. Dashboard loads with default English strings and overview cards
-      expect(find.textContaining('Duo Wallet'), findsWidgets);
+      // 1. Dashboard loads with the focused spending overview
+      expect(find.text('Together this month'), findsOneWidget);
       expect(find.byIcon(Icons.receipt_long_outlined), findsOneWidget);
 
       // 2. Navigate to Transactions tab via icon-only bottom bar
@@ -33,12 +33,20 @@ void main() {
       // Switch to Personal view tab
       await tester.tap(find.text('Personal'));
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Personal')).selected, isTrue);
+      expect(
+          tester
+              .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Personal'))
+              .selected,
+          isTrue);
 
       // Switch to All Mine view tab
       await tester.tap(find.text('All Mine'));
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All Mine')).selected, isTrue);
+      expect(
+          tester
+              .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'All Mine'))
+              .selected,
+          isTrue);
 
       // 3. Navigate to Settle Up tab via icon-only bottom bar
       await tester.tap(find.byIcon(Icons.handshake_outlined));

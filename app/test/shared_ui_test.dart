@@ -70,7 +70,7 @@ void main() {
     }
   });
 
-  for (final theme in [AppTheme.light(), AppTheme.dark()]) {
+  for (final theme in [AppTheme.light()]) {
     testWidgets(
         'functional tokens and solid badges have readable contrast ${theme.brightness}',
         (tester) async {
@@ -93,6 +93,29 @@ void main() {
           greaterThanOrEqualTo(4.5));
     });
   }
+
+  testWidgets(
+      'light-only UI uses white surfaces and consistent 48dp transfer controls',
+      (tester) async {
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await mountApp(tester);
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+        ThemeMode.light);
+    final button = find.widgetWithText(OutlinedButton, 'Transfer');
+    expect(button, findsOneWidget);
+    final size = tester.getSize(button);
+    expect(size.height, greaterThanOrEqualTo(48));
+    expect(size.height, lessThanOrEqualTo(56));
+    final theme = Theme.of(tester.element(button));
+    expect(theme.brightness, Brightness.light);
+    expect(theme.scaffoldBackgroundColor, Colors.white);
+    expect(theme.colorScheme.surface, Colors.white);
+    expect(theme.extension<DuoColors>()!.well, Colors.white);
+    final shape = theme.outlinedButtonTheme.style!.shape!.resolve({})
+        as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(8));
+  });
 
   testWidgets('Pressable is focusable and keyboard activation fires once',
       (tester) async {

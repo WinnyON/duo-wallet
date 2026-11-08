@@ -135,7 +135,8 @@ class BackendSession extends ChangeNotifier {
   Future<void> _saveAfterChange() async {
     try {
       await _persist();
-      if (!_syncing) {
+      // Remote snapshots also emit changes; only local queued edits need a push.
+      if (!_syncing && db.pendingOutbox.isNotEmpty) {
         _debounce?.cancel();
         _debounce = Timer(
             const Duration(milliseconds: 500), () => unawaited(syncNow()));
@@ -183,7 +184,8 @@ class BackendSession extends ChangeNotifier {
   Future<void> onboard(
       {required String displayName,
       required String householdName,
-      String? inviteCode, String locale = 'en'}) async {
+      String? inviteCode,
+      String locale = 'en'}) async {
     if (!verified || client == null) {
       throw const AuthException('Verify your email first');
     }
@@ -198,7 +200,13 @@ class BackendSession extends ChangeNotifier {
           'p_display_name': displayName.trim(),
           'p_color': '#4F46E5',
         }).timeout(const Duration(seconds: 20));
-    await client!.from('profiles').update({'locale': locale == 'hu' ? 'hu' : 'en'}).eq('id', userId!).select().single().timeout(const Duration(seconds:20));
+    await client!
+        .from('profiles')
+        .update({'locale': locale == 'hu' ? 'hu' : 'en'})
+        .eq('id', userId!)
+        .select()
+        .single()
+        .timeout(const Duration(seconds: 20));
     await syncNow();
     if (db.household == null) {
       throw StateError('Household could not be loaded; retry sync');

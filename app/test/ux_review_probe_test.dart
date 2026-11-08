@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 import 'package:duo_wallet/app.dart';
 import 'package:duo_wallet/core/db/app_database.dart';
 import 'package:duo_wallet/router.dart';
-import 'package:duo_wallet/theme.dart';
 import 'package:duo_wallet/features/transactions/presentation/transactions_screen.dart';
 import 'package:duo_wallet/features/transfers/presentation/transfer_sheet.dart';
 import 'package:flutter/material.dart';
@@ -142,11 +141,14 @@ void main() {
             }
           }
         }
-        container.read(themeModeProvider.notifier).state = ThemeMode.dark;
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
         container.read(appRouterProvider).go('/');
         await pumpUi(tester);
         expect(tester.takeException(), isNull,
-            reason: 'dark dashboard at $config');
+            reason: 'light-only dashboard on a dark-system device at $config');
+        expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+            ThemeMode.light);
         final evidenceDir = Platform.environment['DUO_UI_EVIDENCE_DIR'] ??
             const String.fromEnvironment('DUO_UI_EVIDENCE_DIR');
         if (evidenceDir.isNotEmpty && config.$3 == 1) {
@@ -157,8 +159,8 @@ void main() {
               await pumpUi(tester);
             }
           }
-          await captureUi(
-              tester, boundary, evidenceDir, '${config.$4}_dashboard_dark');
+          await captureUi(tester, boundary, evidenceDir,
+              '${config.$4}_dashboard_dark_system');
         }
         await tester.pumpWidget(const SizedBox.shrink());
       } finally {

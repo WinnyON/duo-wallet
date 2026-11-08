@@ -280,7 +280,7 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
             }, onSelectionChanged: (s) => setState(() => _scope = s.first)),
             const SizedBox(height: 12),
             for (final entry in totals.entries)
-              DuoCard(
+              DuoSection(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -289,7 +289,7 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
                         '${money(entry.value.saved, entry.key)} / ${money(entry.value.target, entry.key)}',
                         style: Theme.of(context).textTheme.titleLarge)
                   ])),
-            DuoCard(
+            DuoSection(
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -321,7 +321,7 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
                       }),
                 ])),
             if (goals.isEmpty)
-              DuoCard(
+              DuoSection(
                   child: Column(children: [
                 Text(l.t('No goals in this view yet.',
                     'Ebben a nézetben még nincs cél.')),
@@ -330,7 +330,7 @@ class _GoalsScreenState extends ConsumerState<GoalsScreen> {
                     child: Text(l.t('Create goal', 'Cél létrehozása')))
               ])),
             for (final g in goals)
-              DuoCard(
+              DuoSection(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

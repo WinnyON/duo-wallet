@@ -267,7 +267,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
           ),
           const SizedBox(height: 16),
           if (budgets.isEmpty)
-            Card(
+            DuoSection(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -316,7 +316,7 @@ class _BudgetsScreenState extends ConsumerState<BudgetsScreen> {
                   child: Pressable(
                     onTap: () =>
                         _showBudgetDialog(context, db, meId, existing: b),
-                    child: Card(
+                    child: DuoSection(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

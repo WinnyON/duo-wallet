@@ -485,13 +485,13 @@ class _RecurringScreenState extends ConsumerState<RecurringScreen> {
                               '$count számla rögzítve.'))));
                     }),
           if (rules.isEmpty)
-            DuoCard(
+            DuoSection(
                 child: TextButton(
                     onPressed: () => _showAddRuleDialog(context, db, me),
                     child: Text(l.t('Add your first recurring bill',
                         'Első ismétlődő számla hozzáadása')))),
           for (final rule in rules)
-            DuoCard(
+            DuoSection(
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

@@ -201,7 +201,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           title: Text(l.exportBackup)),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (ref.watch(productionModeProvider))
-          Card(
+          DuoSection(
               child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -230,7 +230,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         if (_status != null)
           Semantics(
               liveRegion: true,
-              child: Card(
+              child: DuoSection(
                   child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Row(children: [
@@ -244,7 +244,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         const SizedBox(width: 12),
                         Expanded(child: Text(_status!)),
                       ])))),
-        Card(
+        DuoSection(
             child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -342,7 +342,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         const SizedBox(height: 12),
         Text(l.t('Preview · first 20 rows', 'Előnézet · első 20 sor'),
             style: Theme.of(context).textTheme.titleMedium),
-        Card(
+        DuoSection(
             child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -362,7 +362,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   ],
                 ))),
         const SizedBox(height: 12),
-        Card(
+        DuoSection(
             child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(

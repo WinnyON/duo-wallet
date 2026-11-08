@@ -270,10 +270,13 @@ class AppShell extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 4),
                               decoration: BoxDecoration(
-                                color: isTabRoute && i == selectedIdx
-                                    ? scheme.primary.withValues(alpha: .14)
-                                    : null,
-                                borderRadius: BorderRadius.circular(12),
+                                border: Border(
+                                    bottom: BorderSide(
+                                  color: isTabRoute && i == selectedIdx
+                                      ? scheme.primary
+                                      : Colors.transparent,
+                                  width: 2,
+                                )),
                               ),
                               child: Icon(
                                   isTabRoute && i == selectedIdx

@@ -1,3 +1,5 @@
+The current light-only redesign is documented in [light-redesign.md](light-redesign.md), with [new screen captures](light-redesign/). Earlier before/after captures below are historical and show the superseded theme.
+
 # UI/UX evidence
 
 See the [detailed audit](../ui-ux-audit.md), [implementation plan](../ui-ux-implementation-plan.md), and [implementation status](../ui-ux-implementation-status.md).

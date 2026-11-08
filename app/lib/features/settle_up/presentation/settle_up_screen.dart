@@ -398,7 +398,7 @@ class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
           posting == null ? null : db.findAccount(posting.accountId);
       return Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: DuoCard(
+          child: DuoSection(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -508,12 +508,12 @@ class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               if (pending.isEmpty)
-                DuoCard(
+                DuoSection(
                     child: Text(l10n.t(
                         'No pending proposals.', 'Nincs függő javaslat.'))),
               ...pending.map(recordCard),
               const SizedBox(height: 16),
-              Card(
+              DuoSection(
                   child: ExpansionTile(
                       title: Text(l10n.t('How the balance is calculated',
                           'Az egyenleg számítása')),
@@ -536,7 +536,7 @@ class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
                           onTap: () => showTransactionDetails(context, t)),
                   ])),
               const SizedBox(height: 16),
-              Card(
+              DuoSection(
                   child: ExpansionTile(
                       title: Text(l10n.t(
                           'Settlement history (${completed.length})',

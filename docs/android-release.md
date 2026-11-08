@@ -1,3 +1,17 @@
+# Android v1.0.0-beta.4
+
+Light-only UI redesign: white page and content surfaces, cobalt actions, navy text and restrained corner radii. Routine cards are replaced by unboxed sections and list rows. Home focuses on spending, settlement, accounts and recent transactions, with inline Add/Transfer actions that do not obscure balances. Dark-mode settings are removed.
+
+Background polling is silent. A remote database notification no longer schedules a new network sync unless there are queued local edits. Errors and pending changes remain visible, with manual sync in Settings.
+
+- Flutter analysis: no issues.
+- Tests: 68 passed, one opt-in live-backend integration test skipped.
+- All 16 routes checked across five language, width and text-scale combinations; empty/extreme records, keyboard sheets and dark-system/light-app behavior checked.
+- Screenshots and researched design decisions: [light redesign](ui-ux/light-redesign.md).
+- Release APK signature verified with the existing certificate; version code 4, application ID `com.duowallet.app`.
+- APK SHA-256: `6f089c3b72d54915e2317dea9ef7ce1e970670d892639ec50cf7b03165bf545b`.
+- No physical-device or TalkBack validation. No production data or Auth settings changed for this release.
+
 # Android v1.0.0-beta.3
 
 Simplifies signup and password recovery to one password entry, at least 8 characters, without forced character classes. Sign-in no longer applies signup strength rules. English and Hungarian guidance distinguishes rate limits, unconfirmed email, invalid credentials, server failures and connection timeouts. Signup success explains how existing users can sign in or reset their password.

@@ -49,7 +49,7 @@ class ActivityScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
+          DuoSection(
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
@@ -71,7 +71,7 @@ class ActivityScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           if (activities.isEmpty)
-            Card(
+            DuoSection(
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Text(
@@ -83,7 +83,7 @@ class ActivityScreen extends ConsumerWidget {
               ),
             ),
           for (final act in activities)
-            Card(
+            DuoSection(
               margin: const EdgeInsets.only(bottom: 10),
               child: ListTile(
                 leading: MerchantAvatar(

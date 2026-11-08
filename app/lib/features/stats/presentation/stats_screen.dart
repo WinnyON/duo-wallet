@@ -197,7 +197,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           const SizedBox(height: 10),
 
           // 1. Spend Overview + Continuous Trading Line Chart + DuoWell Summary Metrics
-          DuoCard(
+          DuoSection(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -288,7 +288,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           ),
 
           // 2. Category Breakdown & Donut Chart with Center Total
-          DuoCard(
+          DuoSection(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -429,7 +429,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           ),
 
           // 3. Shared vs Personal Ratio (from my visible data only)
-          DuoCard(
+          DuoSection(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -459,7 +459,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           ),
 
           // 4. Top Merchants
-          DuoCard(
+          DuoSection(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -494,7 +494,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           ),
 
           // 5. Active Financial Insights
-          DuoCard(
+          DuoSection(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -711,7 +711,7 @@ class _StatsTradingLineChart extends StatelessWidget {
               lineTouchData: LineTouchData(
                 enabled: !hideAmounts,
                 touchTooltipData: LineTouchTooltipData(
-                  getTooltipColor: (_) => const Color(0xFF222222),
+                  getTooltipColor: (_) => duo.heroSurface,
                   getTooltipItems: (touchedSpots) {
                     return touchedSpots.map((spot) {
                       final isExpense = spot.barIndex == 0;
@@ -722,10 +722,8 @@ class _StatsTradingLineChart extends StatelessWidget {
                       );
                       return LineTooltipItem(
                         '$label: $formatted',
-                        TextStyle(
-                          color: isExpense
-                              ? const Color(0xFFFF5A5F)
-                              : const Color(0xFF00A699),
+                        const TextStyle(
+                          color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
                         ),

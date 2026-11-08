@@ -30,7 +30,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final meId = ref.watch(currentUserIdProvider);
     final locale = ref.watch(appLocaleProvider);
     final hideAmounts = ref.watch(hideAmountsProvider);
-    final themeMode = ref.watch(themeModeProvider);
     final l10n = AppLocalizations.of(context);
 
     final hh = db.household;
@@ -43,13 +42,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (ref.watch(productionModeProvider)) const CloudStatusCard(compact: true) else Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(l10n.t('Demo • local data • cloud sync unavailable',
-                  'Demó • helyi adatok • felhőszinkron nem elérhető'))),
-          Card(
+          if (ref.watch(productionModeProvider))
+            const CloudStatusCard()
+          else
+            Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(l10n.t('Demo • local data • cloud sync unavailable',
+                    'Demó • helyi adatok • felhőszinkron nem elérhető'))),
+          DuoSection(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -67,23 +69,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           label: Text(language.$2),
                           selected: locale.startsWith(language.$1),
                           onSelected: (_) {
-                            ref.read(appLocaleProvider.notifier).state = language.$1;
+                            ref.read(appLocaleProvider.notifier).state =
+                                language.$1;
                             if (ref.read(productionModeProvider)) {
                               final profile = db.findProfile(meId);
-                              if (profile != null) db.upsertProfile(Profile.fromJson({...profile.toJson(), 'locale': language.$1}));
+                              if (profile != null) {
+                                db.upsertProfile(Profile.fromJson({
+                                  ...profile.toJson(),
+                                  'locale': language.$1
+                                }));
+                              }
                             }
                           }),
                   ]),
                   const SizedBox(height: 16),
                   Text(l10n.t(
-                      'Reports use HUF. Accounts and goals keep their own currency. Reporting currency conversion is unavailable.',
-                      'A jelentések HUF-ban jelennek meg. A számlák és célok megtartják saját pénznemüket. A jelentések pénznemátváltása nem elérhető.')),
+                      'Reports use HUF. Accounts and goals keep their own currency.',
+                      'A jelentések HUF-ban jelennek meg. A számlák és célok megtartják saját pénznemüket.')),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 12),
-          Card(
+          DuoSection(
             child: Column(
               children: [
                 SwitchListTile(
@@ -107,49 +115,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     );
                   },
                 ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  secondary: const Icon(Icons.fingerprint),
-                  title: Text(l10n.t('App Lock (Biometric / PIN)',
-                      'Alkalmazászár (Ujjlenyomat / PIN)')),
-                  subtitle: Text(
-                    l10n.t(
-                      'Unavailable: this demo does not enforce an application lock.',
-                      'Nem elérhető: a demó nem biztosít alkalmazászárat.',
-                    ),
-                  ),
-                  value: false,
-                  onChanged: null,
-                ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          Card(
+          DuoSection(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    l10n.t('Theme & Appearance', 'Téma és megjelenés'),
+                    l10n.t('Sharing defaults', 'Megosztási alapbeállítások'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 12),
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    for (final choice in [
-                      (ThemeMode.system, l10n.t('System', 'Rendszer')),
-                      (ThemeMode.light, l10n.t('Light', 'Világos')),
-                      (ThemeMode.dark, l10n.t('Dark', 'Sötét'))
-                    ])
-                      ChoiceChip(
-                          label: Text(choice.$2),
-                          selected: themeMode == choice.$1,
-                          onSelected: (_) => ref
-                              .read(themeModeProvider.notifier)
-                              .state = choice.$1),
-                  ]),
-                  const SizedBox(height: 16),
                   Text(
                     l10n.t(
                       'Default Together Split: $defaultSplit% / ${100 - defaultSplit}%',
@@ -184,9 +164,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Card(
+          DuoSection(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -241,9 +221,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Card(
+          DuoSection(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

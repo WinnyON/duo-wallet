@@ -140,7 +140,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       onPressed: reset,
                       child: Text(l10n.t('Clear filters', 'Szűrők törlése')))
               ]),
-              DuoCard(
+              DuoSection(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -155,7 +155,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   ])),
               const SizedBox(height: 12),
               if (rows.isEmpty)
-                DuoCard(
+                DuoSection(
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -206,7 +206,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       : t.baseAmountMinor;
                   return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: DuoCard(
+                      child: DuoSection(
                           onTap: () => showTransactionDetails(context, t),
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,

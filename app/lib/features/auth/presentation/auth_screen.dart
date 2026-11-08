@@ -158,7 +158,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               if (ref.watch(productionModeProvider))
                 const CloudStatusCard()
               else
-                Card(
+                DuoSection(
                     child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -175,7 +175,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                   'A módosítások a helyi demót érintik. A belépés, a háztartáshoz csatlakozás és a felhőszinkron nem elérhető. Az adatok nem tartós biztonsági mentések.')),
                             ]))),
               const SizedBox(height: 12),
-              Card(
+              DuoSection(
                   child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -293,7 +293,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             ]),
                           ]))),
               const SizedBox(height: 12),
-              Card(
+              DuoSection(
                   child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -346,7 +346,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     'Nem érhető el helyi háztartás.')),
               const SizedBox(height: 12),
               if (!ref.watch(productionModeProvider))
-                Card(
+                DuoSection(
                     child: ExpansionTile(
                         title: Text(l10n.t('Demo tools', 'Demó eszközök')),
                         subtitle: Text(l10n.t('Switch local test identity',

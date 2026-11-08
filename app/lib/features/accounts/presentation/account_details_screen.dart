@@ -82,7 +82,7 @@ class AccountDetailsScreen extends ConsumerWidget {
         body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
             children: [
-              DuoCard(
+              DuoSection(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -123,7 +123,7 @@ class AccountDetailsScreen extends ConsumerWidget {
                       'Számlatörténet (${linkedTxns.length})'),
                   style: textTheme.titleMedium),
               if (linkedTxns.isEmpty)
-                DuoCard(
+                DuoSection(
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -149,7 +149,7 @@ class AccountDetailsScreen extends ConsumerWidget {
                   final category = t.categoryId == null
                       ? null
                       : db.findCategory(t.categoryId!);
-                  return DuoCard(
+                  return DuoSection(
                       onTap: () => showTransactionDetails(context, t),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,

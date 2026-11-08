@@ -567,7 +567,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final duo = context.duo;
     final textTheme = Theme.of(context).textTheme;
 
-    Widget accountCard(Account account) => DuoCard(
+    Widget accountCard(Account account) => DuoSection(
         onTap: () => context.push('/accounts/${account.id}'),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -606,7 +606,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     label: Text(l10n.t(
                         'Update valuation', 'Értékbecslés frissítése')))),
         ]));
-    Widget emptyGroup(bool common) => DuoCard(
+    Widget emptyGroup(bool common) => DuoSection(
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -647,7 +647,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
               if (commonAccounts.isEmpty) emptyGroup(true),
               ...commonAccounts.map(accountCard),
               if (commonAccounts.isNotEmpty)
-                DuoCard(
+                DuoSection(
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
