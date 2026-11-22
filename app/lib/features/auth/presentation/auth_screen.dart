@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/auth/backend_session.dart';
 import '../../../core/auth/cloud_status.dart';
 import '../../../core/db/tables/tables.dart';
+import '../../../core/domain/profile_photo.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../router.dart';
 import '../../../core/money/money.dart';
 import '../../../theme.dart';
+
+final profileImagePickerProvider =
+    Provider<ImagePicker>((ref) => ImagePicker());
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -36,6 +41,40 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   String _avatar = 'initials';
   String _initial = '';
   bool _discardAuthorized = false;
+  bool _pickingPhoto = false;
+
+  Future<void> _pickPhoto() async {
+    final id = ref.read(currentUserIdProvider);
+    setState(() => _pickingPhoto = true);
+    try {
+      final file = await ref.read(profileImagePickerProvider).pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 256,
+          maxHeight: 256,
+          imageQuality: 80,
+          requestFullMetadata: false);
+      if (file == null) return;
+      if (await file.length() > 15 * 1024 * 1024) {
+        throw const FormatException('Photo is too large');
+      }
+      final photo = await encodeProfilePhoto(await file.readAsBytes());
+      if (!mounted || ref.read(currentUserIdProvider) != id) return;
+      setState(() {
+        _url.text = photo;
+        _avatar = 'image';
+      });
+    } catch (_) {
+      if (!mounted || ref.read(currentUserIdProvider) != id) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.t(
+              'Could not open this photo. Choose another image smaller than 15 MB.',
+              'A kép nem nyitható meg. Válassz másik, 15 MB-nál kisebb képet.'))));
+    } finally {
+      if (mounted) setState(() => _pickingPhoto = false);
+    }
+  }
+
   String get _draft => [
         _name.text,
         _contribution.text,
@@ -113,8 +152,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         createdAt: household.createdAt));
     setState(() => _initial = _draft);
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.t('Local profile saved', 'Helyi profil mentve'))));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.t('Profile saved', 'Profil mentve'))));
   }
 
   Future<void> _close() async {
@@ -199,7 +238,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                 ('initials', l10n.t('Initials', 'Monogram')),
                                 ('man', l10n.t('Face 1', 'Arc 1')),
                                 ('woman', l10n.t('Face 2', 'Arc 2')),
-                                ('image', l10n.t('Photo URL', 'Kép URL'))
+                                ('image', l10n.t('Photo', 'Fénykép'))
                               ])
                                 ChoiceChip(
                                     label: Text(choice.$2),
@@ -209,27 +248,38 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             ]),
                             if (_avatar == 'image') ...[
                               const SizedBox(height: 12),
-                              TextFormField(
-                                  key: _urlField,
-                                  focusNode: _urlFocus,
-                                  controller: _url,
-                                  onChanged: (_) => setState(() {}),
-                                  decoration: InputDecoration(
-                                      labelText: l10n.t('Optional photo URL',
-                                          'Opcionális kép URL')),
-                                  validator: (text) {
-                                    if (text == null || text.trim().isEmpty) {
-                                      return null;
-                                    }
-                                    final uri = Uri.tryParse(text.trim());
-                                    return uri != null &&
-                                            ['http', 'https']
-                                                .contains(uri.scheme) &&
-                                            uri.host.isNotEmpty
-                                        ? null
-                                        : l10n.t('Enter a valid web address.',
-                                            'Adj meg érvényes webcímet.');
-                                  }),
+                              OutlinedButton.icon(
+                                  onPressed: _pickingPhoto ? null : _pickPhoto,
+                                  icon:
+                                      const Icon(Icons.photo_library_outlined),
+                                  label: Text(l10n.t('Choose profile photo',
+                                      'Profilkép kiválasztása'))),
+                              const SizedBox(height: 8),
+                              Text(l10n.t(
+                                  'Choose a photo, then save your changes. Your household can see your profile photo.',
+                                  'Válassz képet, majd mentsd a módosításokat. A profilképed látható a háztartásod számára.')),
+                              if (!_url.text.startsWith('data:'))
+                                TextFormField(
+                                    key: _urlField,
+                                    focusNode: _urlFocus,
+                                    controller: _url,
+                                    onChanged: (_) => setState(() {}),
+                                    decoration: InputDecoration(
+                                        labelText: l10n.t('Optional photo URL',
+                                            'Opcionális kép URL')),
+                                    validator: (text) {
+                                      if (text == null || text.trim().isEmpty) {
+                                        return null;
+                                      }
+                                      final uri = Uri.tryParse(text.trim());
+                                      return uri != null &&
+                                              ['http', 'https']
+                                                  .contains(uri.scheme) &&
+                                              uri.host.isNotEmpty
+                                          ? null
+                                          : l10n.t('Enter a valid web address.',
+                                              'Adj meg érvényes webcímet.');
+                                    }),
                             ],
                             const SizedBox(height: 12),
                             TextFormField(
@@ -335,12 +385,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           ]))),
               const SizedBox(height: 12),
               FilledButton.icon(
-                  onPressed: db.household == null || !_dirty
+                  onPressed: db.household == null || !_dirty || _pickingPhoto
                       ? null
                       : () => _save(db, profile),
                   icon: const Icon(Icons.save_outlined),
-                  label: Text(l10n.t(
-                      'Save local changes', 'Helyi módosítások mentése'))),
+                  label: Text(ref.watch(productionModeProvider)
+                      ? l10n.t('Save changes', 'Módosítások mentése')
+                      : l10n.t(
+                          'Save local changes', 'Helyi módosítások mentése'))),
               if (db.household == null)
                 Text(l10n.t('No local household is available.',
                     'Nem érhető el helyi háztartás.')),

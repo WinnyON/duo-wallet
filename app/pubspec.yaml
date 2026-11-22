@@ -1,7 +1,7 @@
 name: duo_wallet
 description: Offline-first private shared & personal finance app for two people.
 publish_to: 'none'
-version: 1.0.0-beta.5+5
+version: 1.0.0-beta.9+9
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -31,6 +31,7 @@ dependencies:
   crypto: ^3.0.3
   flutter_secure_storage: ^11.2.0
   cryptography: ^2.7.0
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,17 @@
+# Android v1.0.0-beta.9
+
+Adds gallery profile photos, saved as bounded PNG thumbnails in the existing profile field so they remain available offline and use the existing profile sync and backup. Choose Photo in Household & Profile, select an image, then Save changes. Existing photo URLs remain supported. No database migration or public image bucket is required.
+
+Adds 12 dp between the private cloud backup and restore-review buttons. Drawer primary destinations now navigate to their explicit route; Dashboard returns home even when the Home branch previously displayed Budgets or another supporting screen.
+
+Updates Stats with cash-flow reporting and allows opening the underlying transactions for a chart period. Transactions start in the current month and support preset and custom date ranges.
+
+- Static analysis clean. 86 tests passed, with one opt-in live-backend test skipped.
+- Regression checks cover Dashboard navigation from pushed Budgets, photo thumbnail bounds, profile serialization, photo preview/save, and picker cancellation/failure.
+- Version code 9; existing release signing configuration and production configuration retained.
+- APK SHA-256: `8ce81c1b719b05f0b8667979c6eeff4b6aca73c102b2487613a71359186607c6`.
+- Native gallery selection and photo synchronization between physical phones still require user verification.
+
 # Android v1.0.0-beta.5
 
 Small separation refinement to beta.4. Restores visible section dividers (previously covered by opaque Material children), adds white bordered cards only around selected dense workflows, and outlines recurring-item Edit. The light palette, layouts and navigation are retained.

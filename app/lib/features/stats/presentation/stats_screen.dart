@@ -4,10 +4,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/db/tables/tables.dart';
 import '../../../core/domain/insights.dart';
+import '../../../core/domain/cash_flow.dart';
 import '../../../core/domain/views.dart';
 import '../../../core/l10n/generated/app_localizations.dart';
 import '../../../core/money/currency.dart';
@@ -24,6 +26,26 @@ class StatsScreen extends ConsumerStatefulWidget {
 
 class _StatsScreenState extends ConsumerState<StatsScreen> {
   ExpenseView _view = ExpenseView.together;
+  ReportingRange _range = ReportingRange.allTime;
+  int _year = DateTime.now().year, _month = DateTime.now().month;
+  bool _bars = false;
+  DateTime? _selectedPeriodStart;
+
+  void _openEntries(CashFlowBucket bucket) {
+    final end = DateTime(bucket.end.year, bucket.end.month, bucket.end.day - 1);
+    context.go(Uri(path: '/transactions', queryParameters: {
+      'from': DateFormat('yyyy-MM-dd').format(bucket.start),
+      'to': DateFormat('yyyy-MM-dd').format(end),
+      'view': _view.name,
+      'request': DateTime.now().microsecondsSinceEpoch.toString(),
+    }).toString());
+  }
+
+  String _bucketLabel(CashFlowBucket bucket, String locale) => switch (_range) {
+        ReportingRange.allTime => '${bucket.start.year}',
+        ReportingRange.year => DateFormat.yMMMM(locale).format(bucket.start),
+        ReportingRange.month => DateFormat.yMMMd(locale).format(bucket.start),
+      };
 
   Color _parseColor(String hex, Color fallback) {
     final cleaned = hex.replaceFirst('#', '');
@@ -43,9 +65,29 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final duo = context.duo;
     final textTheme = Theme.of(context).textTheme;
 
-    final rangeStart = DateTime(now.year, now.month - 5);
-    final rangeEnd = DateTime(now.year, now.month + 1);
-    final txns = db.transactions
+    final visible = db.transactions
+        .where((t) =>
+            t.deletedAt == null &&
+            (t.visibility == VisibilityLevel.shared || t.createdBy == meId))
+        .toList();
+    final recordedYears = {
+      now.year,
+      _year,
+      ...visible.map((t) => t.occurredOn.year)
+    }.toList()
+      ..sort();
+    final years = List.generate(recordedYears.last - recordedYears.first + 1,
+        (index) => recordedYears.last - index);
+    final buckets = cashFlowBuckets(
+        transactions: visible,
+        range: _range,
+        year: _year,
+        month: _month,
+        view: _view,
+        meId: meId,
+        now: now);
+    final rangeStart = buckets.first.start, rangeEnd = buckets.last.end;
+    final txns = visible
         .where((t) =>
             !t.occurredOn.isBefore(rangeStart) &&
             t.occurredOn.isBefore(rangeEnd))
@@ -56,22 +98,6 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     var totalIncomeMinor = 0;
     var myShareTogetherMinor = 0;
     var myIndividualMinor = 0;
-
-    int incomeFor(Txn t) => switch (_view) {
-          ExpenseView.together => t.paidFromCommon || t.scope == Scope.together
-              ? t.baseAmountMinor
-              : 0,
-          ExpenseView.individual => !t.paidFromCommon &&
-                  t.scope == Scope.individual &&
-                  t.createdBy == meId
-              ? t.baseAmountMinor
-              : 0,
-          ExpenseView.myTotal => !t.paidFromCommon &&
-                  t.scope == Scope.individual &&
-                  t.createdBy == meId
-              ? t.baseAmountMinor
-              : (t.baseShares[meId] ?? 0),
-        };
 
     for (final t in txns) {
       if (t.deletedAt != null) continue;
@@ -92,49 +118,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           myIndividualMinor += t.baseAmountMinor;
         }
       } else if (t.kind == TxnKind.income) {
-        totalIncomeMinor += incomeFor(t);
+        totalIncomeMinor += incomeFor(t, _view, meId);
       }
     }
 
-    // Compute 6-month trend points (Expenses & Income) for continuous trading chart
-    final trendMonths = <({
-      String label,
-      int amountMinor,
-      int incomeMinor,
-      bool isCurrent,
-    })>[];
-    for (var offset = 5; offset >= 0; offset--) {
-      final mDate = DateTime(now.year, now.month - offset, 1);
-      final mEnd = DateTime(now.year, now.month - offset + 1, 1);
-      final mTotal = txns
-          .where(
-            (t) =>
-                t.deletedAt == null &&
-                t.kind == TxnKind.expense &&
-                !t.occurredOn.isBefore(mDate) &&
-                t.occurredOn.isBefore(mEnd),
-          )
-          .fold<int>(0, (s, t) => s + amountFor(t, _view, meId));
-      final mIncome = txns
-          .where(
-            (t) =>
-                t.deletedAt == null &&
-                t.kind == TxnKind.income &&
-                !t.occurredOn.isBefore(mDate) &&
-                t.occurredOn.isBefore(mEnd),
-          )
-          .fold<int>(0, (s, t) => s + incomeFor(t));
-      trendMonths.add((
-        label: DateFormat('MMM', localeStr).format(mDate),
-        amountMinor: mTotal,
-        incomeMinor: mIncome,
-        isCurrent: offset == 0,
-      ));
-    }
-
     final savingsRatePct = totalIncomeMinor > 0
-        ? (((totalIncomeMinor - totalSpendMinor) / totalIncomeMinor) * 100)
-            .clamp(-100.0, 100.0)
+        ? ((totalIncomeMinor - totalSpendMinor) / totalIncomeMinor) * 100
         : 0.0;
 
     final sortedCats = categoryTotals.entries.toList()
@@ -148,17 +137,39 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         : 0;
     final individualPct = myCombinedMinor > 0 ? 100 - togetherPct : 0;
 
-    final insights = generateInsights(
-      meId: meId,
-      transactions: txns,
-      categories: db.categories,
-      budgets: db.budgets,
-      recurringRules: db.recurringRules.where(
-        (r) => r.visibility == VisibilityLevel.shared || r.createdBy == meId,
-      ),
-      goals: db.goals.where((g) => g.isShared || g.ownerId == meId),
-      now: now,
-    );
+    final net = totalIncomeMinor - totalSpendMinor;
+    final insights = <InsightItem>[
+      if (totalIncomeMinor != 0 || totalSpendMinor != 0)
+        InsightItem(
+            id: 'period-balance',
+            titleEn: net >= 0
+                ? 'Income exceeds spending by ${Money(net).format(locale: localeStr, hideAmounts: hideAmounts)} in this period.'
+                : 'Spending exceeds income by ${Money(-net).format(locale: localeStr, hideAmounts: hideAmounts)} in this period.',
+            titleHu: net >= 0
+                ? 'A bevétel ${Money(net).format(locale: localeStr, hideAmounts: hideAmounts)} összeggel meghaladja a kiadást ebben az időszakban.'
+                : 'A kiadás ${Money(-net).format(locale: localeStr, hideAmounts: hideAmounts)} összeggel meghaladja a bevételt ebben az időszakban.',
+            severity:
+                net >= 0 ? InsightSeverity.success : InsightSeverity.warning),
+      if (sortedCats.isNotEmpty)
+        InsightItem(
+            id: 'period-category',
+            titleEn:
+                '${db.findCategory(sortedCats.first.key)?.nameEn ?? 'Uncategorized'} is the largest expense category in this period.',
+            titleHu:
+                '${db.findCategory(sortedCats.first.key)?.nameHu ?? 'Kategória nélkül'} a legnagyobb kiadási kategória ebben az időszakban.'),
+    ];
+    final periodIndex =
+        buckets.indexWhere((bucket) => bucket.start == _selectedPeriodStart);
+    final pickedIndex = periodIndex < 0 ? null : periodIndex;
+    final selected = pickedIndex == null ? null : buckets[pickedIndex];
+    final trendTitle = switch (_range) {
+      ReportingRange.allTime =>
+        l10n.t('Yearly Cash-Flow Trend', 'Éves pénzmozgás trend'),
+      ReportingRange.year =>
+        l10n.t('Monthly Cash-Flow Trend', 'Havi pénzmozgás trend'),
+      ReportingRange.month =>
+        l10n.t('Daily Cash-Flow Trend', 'Napi pénzmozgás trend'),
+    };
 
     return Scaffold(
       appBar: AppBar(
@@ -170,6 +181,69 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final option in ReportingRange.values)
+              ChoiceChip(
+                  label: Text(switch (option) {
+                    ReportingRange.allTime => l10n.t('All time', 'Összes idő'),
+                    ReportingRange.year => l10n.t('Year', 'Év'),
+                    ReportingRange.month => l10n.t('Month', 'Hónap'),
+                  }),
+                  selected: _range == option,
+                  onSelected: (_) => setState(() {
+                        _range = option;
+                        _selectedPeriodStart = null;
+                      })),
+          ]),
+          if (_range != ReportingRange.allTime) ...[
+            const SizedBox(height: 12),
+            Wrap(spacing: 12, runSpacing: 12, children: [
+              SizedBox(
+                  width: 140,
+                  child: DropdownButtonFormField<int>(
+                      key: const ValueKey('statistics-year'),
+                      initialValue: _year,
+                      isExpanded: true,
+                      decoration:
+                          InputDecoration(labelText: l10n.t('Year', 'Év')),
+                      items: years
+                          .map((y) =>
+                              DropdownMenuItem(value: y, child: Text('$y')))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _year = value;
+                            _selectedPeriodStart = null;
+                          });
+                        }
+                      })),
+              if (_range == ReportingRange.month)
+                SizedBox(
+                    width: 180,
+                    child: DropdownButtonFormField<int>(
+                        key: const ValueKey('statistics-month'),
+                        initialValue: _month,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                            labelText: l10n.t('Month', 'Hónap')),
+                        items: List.generate(
+                            12,
+                            (i) => DropdownMenuItem(
+                                value: i + 1,
+                                child: Text(DateFormat.MMMM(localeStr)
+                                    .format(DateTime(2000, i + 1))))),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _month = value;
+                              _selectedPeriodStart = null;
+                            });
+                          }
+                        })),
+            ]),
+          ],
+          const SizedBox(height: 12),
           Text(
               '${DateFormat.yMMMd(localeStr).format(rangeStart)} – ${DateFormat.yMMMd(localeStr).format(rangeEnd.subtract(const Duration(days: 1)))} • HUF'),
           if (_view == ExpenseView.myTotal &&
@@ -192,7 +266,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               ),
             ],
             selected: {_view},
-            onSelectionChanged: (s) => setState(() => _view = s.first),
+            onSelectionChanged: (s) => setState(() {
+              _view = s.first;
+              _selectedPeriodStart = null;
+            }),
           ),
           const SizedBox(height: 10),
 
@@ -201,28 +278,25 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        l10n.t(
-                          'Monthly Cash-Flow Trend',
-                          'Havi pénzmozgás trend',
-                        ),
-                        style: textTheme.titleMedium,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    DuoPill(
-                      totalIncomeMinor > 0
-                          ? '${savingsRatePct >= 0 ? "+" : ""}${savingsRatePct.toStringAsFixed(1)}%'
-                          : '—',
-                      solid: savingsRatePct >= 0,
-                      color: savingsRatePct >= 0 ? duo.positive : duo.negative,
-                    ),
-                  ],
-                ),
+                DuoSectionHeader(
+                    title: trendTitle,
+                    trailing: ToggleButtons(
+                        isSelected: [!_bars, _bars],
+                        constraints:
+                            const BoxConstraints(minWidth: 48, minHeight: 48),
+                        borderRadius: BorderRadius.circular(8),
+                        selectedColor: Colors.white,
+                        fillColor: Theme.of(context).colorScheme.primary,
+                        onPressed: (index) =>
+                            setState(() => _bars = index == 1),
+                        children: [
+                          Tooltip(
+                              message: l10n.t('Line chart', 'Vonaldiagram'),
+                              child: const Icon(Icons.show_chart)),
+                          Tooltip(
+                              message: l10n.t('Bar chart', 'Oszlopdiagram'),
+                              child: const Icon(Icons.bar_chart))
+                        ])),
                 const SizedBox(height: 8),
                 DuoAmount(
                   money: Money(totalSpendMinor, CurrencyCode.huf),
@@ -232,13 +306,61 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                   fontSize: 36,
                 ),
                 const SizedBox(height: 14),
-                _StatsTradingLineChart(
-                  months: trendMonths,
-                  locale: localeStr,
-                  hideAmounts: hideAmounts,
-                  expenseLabel: l10n.expense,
-                  incomeLabel: l10n.income,
+                _CashFlowChart(
+                    key: ValueKey(
+                        'cash-flow-${_range.name}-$_year-$_month-${_view.name}-$_bars'),
+                    buckets: buckets,
+                    range: _range,
+                    bars: _bars,
+                    locale: localeStr,
+                    hideAmounts: hideAmounts,
+                    expenseLabel: l10n.expense,
+                    incomeLabel: l10n.income,
+                    onSelect: (index) => setState(
+                        () => _selectedPeriodStart = buckets[index].start)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(
+                      'bucket-selector-${_range.name}-$_year-$_month-${_view.name}-${pickedIndex ?? 'none'}'),
+                  initialValue: pickedIndex,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                      labelText: l10n.t('Period details', 'Időszak részletei')),
+                  hint: Text(
+                      l10n.t('Select a period or tap the chart',
+                          'Válassz időszakot vagy érintsd meg a diagramot'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  items: [
+                    for (var i = 0; i < buckets.length; i++)
+                      DropdownMenuItem(
+                          value: i,
+                          child: Text(_bucketLabel(buckets[i], localeStr)))
+                  ],
+                  onChanged: (index) {
+                    if (index != null) {
+                      setState(
+                          () => _selectedPeriodStart = buckets[index].start);
+                    }
+                  },
                 ),
+                if (selected != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_bucketLabel(selected, localeStr),
+                      style: textTheme.titleSmall),
+                  const SizedBox(height: 6),
+                  Text(
+                      '${l10n.expense}: ${Money(selected.expenseMinor).format(locale: localeStr, hideAmounts: hideAmounts)}'),
+                  Text(
+                      '${l10n.income}: ${Money(selected.incomeMinor).format(locale: localeStr, hideAmounts: hideAmounts)}'),
+                  Text(
+                      '${l10n.t('Balance', 'Egyenleg')}: ${Money(selected.balanceMinor).format(locale: localeStr, hideAmounts: hideAmounts)}'),
+                  OutlinedButton.icon(
+                      onPressed: () => _openEntries(selected),
+                      icon: const Icon(Icons.receipt_long_outlined),
+                      label:
+                          Text(l10n.t('View entries', 'Tételek megtekintése'))),
+                ],
                 const SizedBox(height: 16),
                 DuoWell(
                   padding:
@@ -566,261 +688,202 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   }
 }
 
-class _StatsTradingLineChart extends StatelessWidget {
-  const _StatsTradingLineChart({
-    required this.months,
-    required this.locale,
-    required this.hideAmounts,
-    required this.expenseLabel,
-    required this.incomeLabel,
-  });
-
-  final List<
-      ({
-        String label,
-        int amountMinor,
-        int incomeMinor,
-        bool isCurrent,
-      })> months;
-  final String locale;
-  final bool hideAmounts;
-  final String expenseLabel;
-  final String incomeLabel;
+class _CashFlowChart extends StatelessWidget {
+  const _CashFlowChart(
+      {super.key,
+      required this.buckets,
+      required this.range,
+      required this.bars,
+      required this.locale,
+      required this.hideAmounts,
+      required this.expenseLabel,
+      required this.incomeLabel,
+      required this.onSelect});
+  final List<CashFlowBucket> buckets;
+  final ReportingRange range;
+  final bool bars, hideAmounts;
+  final String locale, expenseLabel, incomeLabel;
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
     final duo = context.duo;
-    final textTheme = Theme.of(context).textTheme;
-    final maxMinor = months.fold<int>(
-      1,
-      (m, e) => math.max(m, math.max(e.amountMinor, e.incomeMinor)),
+    final text = Theme.of(context).textTheme;
+    final maxMinor = buckets.fold<int>(1,
+        (value, b) => math.max(value, math.max(b.expenseMinor, b.incomeMinor)));
+    final maxY = maxMinor * 1.18;
+    final stride = (buckets.length / 6).ceil().clamp(1, 10000);
+    final titles = FlTitlesData(
+      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 48,
+              interval: maxY / 3,
+              getTitlesWidget: (value, meta) {
+                if (value <= 0 || value >= maxY * .98) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Text(
+                        Money(value.round()).formatCompact(
+                            locale: locale, hideAmounts: hideAmounts),
+                        style: text.labelSmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis));
+              })),
+      bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 48,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                final index = value.round();
+                if ((value - index).abs() > .01 ||
+                    index < 0 ||
+                    index >= buckets.length ||
+                    index % stride != 0) {
+                  return const SizedBox.shrink();
+                }
+                final date = buckets[index].start;
+                final label = switch (range) {
+                  ReportingRange.allTime => '${date.year}',
+                  ReportingRange.year => DateFormat.MMM(locale).format(date),
+                  ReportingRange.month => '${date.day}',
+                };
+                return InkWell(
+                    onTap: () => onSelect(index),
+                    child: SizedBox(
+                        height: 48,
+                        child: Center(
+                            child: Text(label,
+                                style: text.labelSmall
+                                    ?.copyWith(color: duo.info)))));
+              })),
     );
-    final maxY = (maxMinor * 1.18).toDouble();
-
-    final expenseSpots = <FlSpot>[
-      for (var i = 0; i < months.length; i++)
-        FlSpot(i.toDouble(), months[i].amountMinor.toDouble()),
-    ];
-    final incomeSpots = <FlSpot>[
-      for (var i = 0; i < months.length; i++)
-        FlSpot(i.toDouble(), months[i].incomeMinor.toDouble()),
-    ];
-
-    final expenseColor = duo.negative;
-    final incomeColor = duo.positive; // Babu Teal
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
-          children: [
-            _legendItem(textTheme, expenseColor, expenseLabel),
-            const SizedBox(width: 16),
-            _legendItem(textTheme, incomeColor, incomeLabel),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 184,
-          child: LineChart(
-            LineChartData(
-              minX: 0,
-              maxX: (months.length - 1).toDouble(),
-              minY: 0,
-              maxY: maxY,
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: true,
-                horizontalInterval: maxY > 0 ? maxY / 3 : 1,
-                verticalInterval: 1,
-                getDrawingHorizontalLine: (value) => FlLine(
-                  color: duo.hairline,
-                  strokeWidth: 1,
-                  dashArray: const [4, 4],
-                ),
-                getDrawingVerticalLine: (value) => FlLine(
-                  color: duo.hairline.withValues(alpha: 0.5),
-                  strokeWidth: 1,
-                ),
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 48,
-                    interval: maxY > 0 ? maxY / 3 : 1,
-                    getTitlesWidget: (value, meta) {
-                      if (value <= 0 || value >= maxY * 0.98) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: Text(
-                          Money(value.round()).formatCompact(
-                            locale: locale,
-                            hideAmounts: hideAmounts,
-                          ),
-                          style: textTheme.labelSmall?.copyWith(
-                            color: duo.muted,
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    },
+    final grid = FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: maxY / 3,
+        getDrawingHorizontalLine: (_) => FlLine(
+            color: duo.hairline, strokeWidth: 1, dashArray: const [4, 4]));
+    String amount(int value) =>
+        Money(value).formatCompact(locale: locale, hideAmounts: hideAmounts);
+    Widget legend(Color color, String label) =>
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text(label, style: text.labelSmall),
+        ]);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Wrap(spacing: 20, runSpacing: 8, children: [
+        legend(duo.negative, expenseLabel),
+        legend(duo.positive, incomeLabel)
+      ]),
+      const SizedBox(height: 12),
+      SizedBox(
+          height: 224,
+          child: LayoutBuilder(builder: (context, constraints) {
+            if (bars) {
+              final rodWidth =
+                  (constraints.maxWidth / buckets.length / 4).clamp(2.0, 12.0);
+              return BarChart(
+                  BarChartData(
+                    minY: 0,
+                    maxY: maxY,
+                    titlesData: titles,
+                    gridData: grid,
+                    borderData: FlBorderData(show: false),
+                    barGroups: [
+                      for (var i = 0; i < buckets.length; i++)
+                        BarChartGroupData(x: i, barsSpace: 2, barRods: [
+                          BarChartRodData(
+                              toY: buckets[i].expenseMinor.toDouble(),
+                              color: duo.negative,
+                              width: rodWidth,
+                              borderRadius: BorderRadius.circular(2)),
+                          BarChartRodData(
+                              toY: buckets[i].incomeMinor.toDouble(),
+                              color: duo.positive,
+                              width: rodWidth,
+                              borderRadius: BorderRadius.circular(2)),
+                        ])
+                    ],
+                    barTouchData: BarTouchData(
+                        touchCallback: (event, response) {
+                          if (event is FlTapUpEvent && response?.spot != null) {
+                            onSelect(response!.spot!.touchedBarGroupIndex);
+                          }
+                        },
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (_) => duo.heroSurface,
+                          fitInsideHorizontally: true,
+                          fitInsideVertically: true,
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) =>
+                              BarTooltipItem(
+                                  '$expenseLabel: ${amount(buckets[groupIndex].expenseMinor)}\n$incomeLabel: ${amount(buckets[groupIndex].incomeMinor)}',
+                                  const TextStyle(
+                                      color: Colors.white, fontSize: 12)),
+                        )),
                   ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 26,
-                    interval: 1,
-                    getTitlesWidget: (value, meta) {
-                      final idx = value.round();
-                      if (idx < 0 || idx >= months.length) {
-                        return const SizedBox.shrink();
-                      }
-                      final item = months[idx];
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          item.label,
-                          style: textTheme.labelSmall?.copyWith(
-                            fontSize: 12,
-                            fontWeight: item.isCurrent
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: item.isCurrent ? expenseColor : duo.muted,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              lineTouchData: LineTouchData(
-                enabled: !hideAmounts,
-                touchTooltipData: LineTouchTooltipData(
-                  getTooltipColor: (_) => duo.heroSurface,
-                  getTooltipItems: (touchedSpots) {
-                    return touchedSpots.map((spot) {
-                      final isExpense = spot.barIndex == 0;
-                      final label = isExpense ? expenseLabel : incomeLabel;
-                      final formatted = Money(spot.y.round()).formatCompact(
-                        locale: locale,
-                        hideAmounts: hideAmounts,
-                      );
-                      return LineTooltipItem(
-                        '$label: $formatted',
-                        const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      );
-                    }).toList();
-                  },
-                ),
-              ),
-              lineBarsData: [
-                // 1. Expense continuous curve (Radical Red)
-                LineChartBarData(
-                  spots: expenseSpots,
-                  isCurved: false,
-                  curveSmoothness: 0.32,
-                  preventCurveOverShooting: true,
-                  color: expenseColor,
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(
-                    show: true,
-                    getDotPainter: (spot, percent, bar, index) =>
-                        FlDotCirclePainter(
-                      radius: index == months.length - 1 ? 5 : 3.5,
-                      color: expenseColor,
-                      strokeWidth: 2,
-                      strokeColor: Colors.white,
-                    ),
-                  ),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        expenseColor.withValues(alpha: 0.26),
-                        expenseColor.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                ),
-                // 2. Income continuous curve (Babu Teal)
-                LineChartBarData(
-                  spots: incomeSpots,
-                  isCurved: false,
-                  curveSmoothness: 0.32,
-                  preventCurveOverShooting: true,
-                  color: incomeColor,
+                  swapAnimationDuration: Duration.zero);
+            }
+            LineChartBarData series(bool income) => LineChartBarData(
+                  spots: [
+                    for (var i = 0; i < buckets.length; i++)
+                      FlSpot(
+                          i.toDouble(),
+                          (income
+                                  ? buckets[i].incomeMinor
+                                  : buckets[i].expenseMinor)
+                              .toDouble())
+                  ],
+                  color: income ? duo.positive : duo.negative,
                   barWidth: 2.5,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(
-                    show: true,
-                    getDotPainter: (spot, percent, bar, index) =>
-                        FlDotCirclePainter(
-                      radius: index == months.length - 1 ? 4.5 : 3,
-                      color: incomeColor,
-                      strokeWidth: 1.8,
-                      strokeColor: Colors.white,
-                    ),
-                  ),
+                  dotData: const FlDotData(show: true),
+                  isCurved: false,
                   belowBarData: BarAreaData(
-                    show: true,
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        incomeColor.withValues(alpha: 0.16),
-                        incomeColor.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
+                      show: !income,
+                      color: duo.negative.withValues(alpha: .08)),
+                );
+            return LineChart(
+                LineChartData(
+                  minX: buckets.length == 1 ? -.5 : 0,
+                  maxX: buckets.length == 1
+                      ? .5
+                      : (buckets.length - 1).toDouble(),
+                  minY: 0,
+                  maxY: maxY,
+                  titlesData: titles,
+                  gridData: grid,
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [series(false), series(true)],
+                  lineTouchData: LineTouchData(
+                      touchCallback: (event, response) {
+                        if (event is FlTapUpEvent &&
+                            response?.lineBarSpots?.isNotEmpty == true) {
+                          onSelect(response!.lineBarSpots!.first.spotIndex);
+                        }
+                      },
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipColor: (_) => duo.heroSurface,
+                        fitInsideHorizontally: true,
+                        fitInsideVertically: true,
+                        getTooltipItems: (spots) => spots
+                            .map((spot) => LineTooltipItem(
+                                '${spot.barIndex == 0 ? expenseLabel : incomeLabel}: ${amount(spot.y.round())}',
+                                const TextStyle(
+                                    color: Colors.white, fontSize: 12)))
+                            .toList(),
+                      )),
                 ),
-              ],
-            ),
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : const Duration(milliseconds: 150),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _legendItem(TextTheme textTheme, Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-      ],
-    );
+                duration: Duration.zero);
+          })),
+    ]);
   }
 }

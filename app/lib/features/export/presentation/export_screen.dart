@@ -219,6 +219,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                             icon: const Icon(Icons.cloud_upload_outlined),
                             label: Text(l.t('Save private cloud backup',
                                 'Privát felhőmentés készítése'))),
+                        const SizedBox(height: 12),
                         OutlinedButton.icon(
                             onPressed: _busy
                                 ? null

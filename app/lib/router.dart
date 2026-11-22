@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/l10n/generated/app_localizations.dart';
+import 'core/domain/views.dart';
 import 'features/accounts/presentation/account_details_screen.dart';
 import 'features/accounts/presentation/accounts_screen.dart';
 import 'features/activity/presentation/activity_screen.dart';
@@ -71,7 +72,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(routes: [
             GoRoute(
                 path: '/transactions',
-                builder: (context, state) => const TransactionsScreen()),
+                builder: (context, state) => TransactionsScreen(
+                    filterRequest: state.uri.queryParameters['request'],
+                    startDate: DateTime.tryParse(
+                        state.uri.queryParameters['from'] ?? ''),
+                    endDate: DateTime.tryParse(
+                        state.uri.queryParameters['to'] ?? ''),
+                    view: ExpenseView.values
+                        .where(
+                            (v) => v.name == state.uri.queryParameters['view'])
+                        .firstOrNull)),
           ]),
           StatefulShellBranch(routes: [
             GoRoute(
@@ -316,7 +326,7 @@ class AppShell extends StatelessWidget {
         if (location == path) return;
         final index = _tabs.indexOf(path);
         if (index >= 0 && navigationShell != null) {
-          navigationShell!.goBranch(index);
+          context.go(path);
         } else {
           context.push(path);
         }

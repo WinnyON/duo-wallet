@@ -34,6 +34,23 @@ Future<ProviderContainer> mountApp(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('drawer Dashboard returns home from a pushed Budgets screen',
+      (tester) async {
+    final container = await mountApp(tester);
+    final router = container.read(appRouterProvider);
+    router.push('/budgets');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(
+        of: find.byType(Drawer),
+        matching: find.widgetWithText(ListTile, 'Dashboard')));
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/');
+    expect(find.text('Together this month'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('masked activity never exposes stored prose, including legacy types',
       () {
     for (final type in [

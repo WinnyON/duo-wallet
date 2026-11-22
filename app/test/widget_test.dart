@@ -28,7 +28,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(ChoiceChip), findsNWidgets(3));
-      expect(find.text('All-time spending · current filters'), findsOneWidget);
+      expect(find.text('Period spending · current filters'), findsOneWidget);
 
       // Switch to Personal view tab
       await tester.tap(find.text('Personal'));

@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/db/tables/tables.dart';
+import 'core/domain/profile_photo.dart';
 import 'core/l10n/generated/app_localizations.dart';
 
 import 'core/money/currency.dart';
@@ -1220,6 +1221,8 @@ class UserAvatar extends StatelessWidget {
                 style: TextStyle(color: iconColor, fontSize: size * .42))
             : Icon(Icons.person_outline, size: size * .6, color: iconColor));
     if (avatarType == 'initials' || avatarType == 'image') {
+      final photo =
+          avatarType == 'image' ? decodeProfilePhoto(avatarUrl) : null;
       final uri = Uri.tryParse(avatarUrl ?? '');
       final valid = uri != null &&
           (uri.scheme == 'https' || uri.scheme == 'http') &&
@@ -1228,13 +1231,17 @@ class UserAvatar extends StatelessWidget {
           child: SizedBox(
               width: size,
               height: size,
-              child: avatarType == 'image' && valid
-                  ? Image.network(avatarUrl!,
+              child: photo != null
+                  ? Image.memory(photo,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => fallback(),
-                      loadingBuilder: (_, child, progress) =>
-                          progress == null ? child : fallback())
-                  : fallback()));
+                      errorBuilder: (_, __, ___) => fallback())
+                  : avatarType == 'image' && valid
+                      ? Image.network(avatarUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => fallback(),
+                          loadingBuilder: (_, child, progress) =>
+                              progress == null ? child : fallback())
+                      : fallback()));
     }
 
     final icon =

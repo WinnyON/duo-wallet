@@ -515,6 +515,8 @@ class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
               const SizedBox(height: 16),
               DuoSection(
                   child: ExpansionTile(
+                      shape: const Border(),
+                      collapsedShape: const Border(),
                       title: Text(l10n.t('How the balance is calculated',
                           'Az egyenleg számítása')),
                       childrenPadding: const EdgeInsets.all(16),
@@ -538,6 +540,8 @@ class _SettleUpScreenState extends ConsumerState<SettleUpScreen> {
               const SizedBox(height: 16),
               DuoSection(
                   child: ExpansionTile(
+                      shape: const Border(),
+                      collapsedShape: const Border(),
                       title: Text(l10n.t(
                           'Settlement history (${completed.length})',
                           'Elszámolási előzmények (${completed.length})')),

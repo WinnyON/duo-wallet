@@ -13,9 +13,14 @@ import '../../../core/money/money.dart';
 import '../../../theme.dart';
 import '../../../router.dart';
 import '../../transfers/presentation/transfer_sheet.dart';
+import 'transaction_period_picker.dart';
 
 class TransactionsScreen extends ConsumerStatefulWidget {
-  const TransactionsScreen({super.key});
+  const TransactionsScreen(
+      {super.key, this.startDate, this.endDate, this.view, this.filterRequest});
+  final DateTime? startDate, endDate;
+  final String? filterRequest;
+  final ExpenseView? view;
 
   @override
   ConsumerState<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -25,9 +30,43 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   ExpenseView _selectedView = ExpenseView.together;
   final _search = TextEditingController();
   DateTimeRange? _dates;
+  static const pageSize = 25;
+  int _page = 0;
+  final _scroll = ScrollController();
+
+  void _applyRouteFilters() {
+    _search.clear();
+    final start = widget.startDate, end = widget.endDate;
+    _dates = start != null && end != null && !end.isBefore(start)
+        ? DateTimeRange(
+            start: DateUtils.dateOnly(start), end: DateUtils.dateOnly(end))
+        : transactionPeriod(DateTime.now(), TransactionPeriod.month);
+    if (widget.view != null) _selectedView = widget.view!;
+    _page = 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _applyRouteFilters();
+  }
+
+  @override
+  void didUpdateWidget(covariant TransactionsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startDate != widget.startDate ||
+        oldWidget.endDate != widget.endDate ||
+        oldWidget.view != widget.view ||
+        oldWidget.filterRequest != widget.filterRequest) {
+      _applyRouteFilters();
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    }
+  }
+
   @override
   void dispose() {
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -47,8 +86,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       }
       if (_dates != null &&
           (t.occurredOn.isBefore(_dates!.start) ||
-              !t.occurredOn
-                  .isBefore(_dates!.end.add(const Duration(days: 1))))) {
+              !t.occurredOn.isBefore(DateTime(
+                  _dates!.end.year, _dates!.end.month, _dates!.end.day + 1)))) {
         return false;
       }
       if (query.isNotEmpty &&
@@ -64,16 +103,36 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       if (t.kind == TxnKind.expense) {
         return isIncludedInView(t, _selectedView, me);
       }
+      if (t.kind == TxnKind.income) return incomeFor(t, _selectedView, me) > 0;
       return _selectedView == ExpenseView.together
           ? t.visibility == VisibilityLevel.shared
           : t.createdBy == me || t.visibility == VisibilityLevel.shared;
     }).toList()
-      ..sort((a, b) => b.occurredOn.compareTo(a.occurredOn));
+      ..sort((a, b) {
+        final date = b.occurredOn.compareTo(a.occurredOn);
+        if (date != 0) return date;
+        final created = b.createdAt.compareTo(a.createdAt);
+        return created != 0 ? created : a.id.compareTo(b.id);
+      });
     final total =
         rows.fold<int>(0, (sum, t) => sum + amountFor(t, _selectedView, me));
+    final income =
+        rows.fold<int>(0, (sum, t) => sum + incomeFor(t, _selectedView, me));
+    final pageCount =
+        rows.isEmpty ? 1 : (rows.length + pageSize - 1) ~/ pageSize;
+    _page = _page.clamp(0, pageCount - 1);
+    final currentPage = _page;
+    final pageStart = currentPage * pageSize;
+    final pageRows = rows.skip(pageStart).take(pageSize).toList();
+    void goToPage(int page) {
+      setState(() => _page = page);
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    }
+
     void reset() => setState(() {
+          _page = 0;
           _search.clear();
-          _dates = null;
+          _dates = transactionPeriod(DateTime.now(), TransactionPeriod.month);
         });
     return Scaffold(
         appBar: AppBar(
@@ -90,6 +149,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   tooltip: l10n.transfer)
             ]),
         body: ListView(
+            controller: _scroll,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
             children: [
               Wrap(spacing: 8, runSpacing: 8, children: [
@@ -101,12 +161,15 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                         ExpenseView.individual => l10n.viewIndividual,
                         ExpenseView.myTotal => l10n.viewMyTotal
                       }),
-                      onSelected: (_) => setState(() => _selectedView = view))
+                      onSelected: (_) => setState(() {
+                            _selectedView = view;
+                            _page = 0;
+                          }))
               ]),
               const SizedBox(height: 12),
               TextField(
                   controller: _search,
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (_) => setState(() => _page = 0),
                   decoration: InputDecoration(
                       labelText: l10n.t('Search merchant, note or tag',
                           'Kereskedő, megjegyzés vagy címke keresése'),
@@ -114,20 +177,23 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       suffixIcon: query.isEmpty
                           ? null
                           : IconButton(
-                              onPressed: () => setState(_search.clear),
+                              onPressed: () => setState(() {
+                                    _search.clear();
+                                    _page = 0;
+                                  }),
                               icon: const Icon(Icons.clear),
                               tooltip:
                                   l10n.t('Clear search', 'Keresés törlése')))),
               Wrap(spacing: 8, children: [
                 TextButton.icon(
                     onPressed: () async {
-                      final dates = await showDateRangePicker(
-                          context: context,
-                          firstDate: DateTime(1900),
-                          lastDate: DateTime(2200),
-                          initialDateRange: _dates);
+                      final dates = await showTransactionPeriodPicker(
+                          context: context, initialRange: _dates);
                       if (dates != null && mounted) {
-                        setState(() => _dates = dates);
+                        setState(() {
+                          _dates = dates;
+                          _page = 0;
+                        });
                       }
                     },
                     icon: const Icon(Icons.date_range),
@@ -151,7 +217,25 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                             'Időszak kiadásai · aktuális szűrők')),
                     const SizedBox(height: 8),
                     Text(Money(total).format(locale: locale, hideAmounts: hide),
-                        style: Theme.of(context).textTheme.headlineSmall)
+                        key: const ValueKey('transaction-spending-total'),
+                        style: Theme.of(context).textTheme.headlineSmall),
+                    const SizedBox(height: 16),
+                    Text(_dates == null
+                        ? l10n.t('All-time income · current filters',
+                            'Összes eddigi bevétel · aktuális szűrők')
+                        : l10n.t('Period income · current filters',
+                            'Időszak bevételei · aktuális szűrők')),
+                    const SizedBox(height: 8),
+                    Text(
+                        Money(income).format(locale: locale, hideAmounts: hide),
+                        key: const ValueKey('transaction-income-total'),
+                        style: Theme.of(context)
+                            .textTheme
+                            .headlineSmall
+                            ?.copyWith(color: context.duo.positive)),
+                    const SizedBox(height: 12),
+                    Text(
+                        '${l10n.t('Balance', 'Egyenleg')}: ${Money(income - total).format(locale: locale, hideAmounts: hide)}'),
                   ])),
               const SizedBox(height: 12),
               if (rows.isEmpty)
@@ -173,18 +257,18 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                                 QuickAddTransactionSheet.show(context),
                             child: Text(l10n.quickAdd))
                     ])),
-              for (var index = 0; index < rows.length; index++) ...[
+              for (var index = 0; index < pageRows.length; index++) ...[
                 if (index == 0 ||
-                    !DateUtils.isSameDay(
-                        rows[index - 1].occurredOn, rows[index].occurredOn))
+                    !DateUtils.isSameDay(pageRows[index - 1].occurredOn,
+                        pageRows[index].occurredOn))
                   Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
                           MaterialLocalizations.of(context)
-                              .formatFullDate(rows[index].occurredOn),
+                              .formatFullDate(pageRows[index].occurredOn),
                           style: Theme.of(context).textTheme.titleSmall)),
                 Builder(builder: (context) {
-                  final t = rows[index];
+                  final t = pageRows[index];
                   final category = t.categoryId == null
                       ? null
                       : db.findCategory(t.categoryId!);
@@ -203,10 +287,13 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       : l10n.partnerPersonalAccount;
                   final value = t.kind == TxnKind.expense
                       ? amountFor(t, _selectedView, me)
-                      : t.baseAmountMinor;
+                      : t.kind == TxnKind.income
+                          ? incomeFor(t, _selectedView, me)
+                          : t.baseAmountMinor;
                   return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: DuoSection(
+                          key: ValueKey('transaction-row-${t.id}'),
                           onTap: () => showTransactionDetails(context, t),
                           child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -268,6 +355,32 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                               ])));
                 }),
               ],
+              if (rows.isNotEmpty)
+                Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(children: [
+                      Text(l10n.t(
+                          '${pageStart + 1}–${pageStart + pageRows.length} of ${rows.length} entries',
+                          '${rows.length} tételből ${pageStart + 1}–${pageStart + pageRows.length}')),
+                      Wrap(
+                          spacing: 12,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            OutlinedButton.icon(
+                                onPressed: currentPage > 0
+                                    ? () => goToPage(currentPage - 1)
+                                    : null,
+                                icon: const Icon(Icons.chevron_left),
+                                label: Text(l10n.t('Previous', 'Előző'))),
+                            Text('${currentPage + 1} / $pageCount'),
+                            OutlinedButton.icon(
+                                onPressed: currentPage + 1 < pageCount
+                                    ? () => goToPage(currentPage + 1)
+                                    : null,
+                                icon: const Icon(Icons.chevron_right),
+                                label: Text(l10n.t('Next', 'Következő'))),
+                          ]),
+                    ])),
             ]),
         floatingActionButton: FloatingActionButton.extended(
             onPressed: () => QuickAddTransactionSheet.show(context),
